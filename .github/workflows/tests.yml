@@ -1,0 +1,85 @@
+# Runs on every pull request to main (each new push to the PR runs it again) and on every merge to main.
+#
+#   functional   API + UI tests (plain `pytest`)                       ~1-2 min
+#   performance  load + concurrency tests (`pytest -m perf`)           ~1 min
+#                only starts if functional passed: no point load-testing a broken build
+#                pull request: normal load (PERF_LOAD=1), a quick check before merging
+#                merge to main: 3x the load (PERF_LOAD=3), on the code that will be deployed
+#
+# Reports are attached to each run under "Artifacts"; performance results also show on the run's summary page.
+
+name: tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:            # "Run workflow" button in the Actions tab
+
+# A new push to the same PR cancels the run still going for the previous push.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  functional:
+    name: API + UI tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Run API + UI tests
+        run: pytest
+
+      - name: Upload reports (HTML, JUnit, API log, failure screenshots)
+        if: always()            # most useful when the tests failed
+        uses: actions/upload-artifact@v4
+        with:
+          name: functional-reports
+          path: reports/
+          retention-days: 14
+
+  performance:
+    name: Performance tests
+    needs: functional
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PERF_LOAD: ${{ github.event_name == 'push' && '3' || '1' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt     # no browser needed
+
+      - name: Run performance tests (PERF_LOAD=${{ env.PERF_LOAD }})
+        run: pytest -m perf
+
+      - name: Show results on the run page
+        if: always()
+        run: cat reports/performance.md >> "$GITHUB_STEP_SUMMARY" || echo "No performance results were written."
+
+      - name: Upload performance reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-reports
+          path: reports/
+          retention-days: 30

@@ -1,0 +1,52 @@
+[
+  {
+    "case": "no-header",
+    "authorization": null,
+    "expect": {"status": 401, "code": "UNAUTHENTICATED"}
+  },
+  {
+    "case": "scheme-only",
+    "authorization": "Bearer",
+    "expect": {"status": 401, "code": "UNAUTHENTICATED"}
+  },
+  {
+    "case": "token-without-scheme",
+    "why": "the raw token with no 'Bearer ' in front",
+    "authorization": "{token}",
+    "expect": {"status": 401, "code": "UNAUTHENTICATED"}
+  },
+  {
+    "case": "basic-auth",
+    "why": "username:password instead of a token",
+    "authorization": "Basic dXNlcjpwYXNzd29yZA==",
+    "expect": {"status": 401, "code": "UNAUTHENTICATED"}
+  },
+  {
+    "case": "made-up-token",
+    "authorization": "Bearer not-a-real-token",
+    "expect": {"status": 401, "code": "INVALID_TOKEN"}
+  },
+  {
+    "case": "api-key-used-as-token",
+    "why": "the API key must be exchanged for a token first, not sent directly",
+    "authorization": "Bearer user-api-key",
+    "expect": {"status": 401, "code": "INVALID_TOKEN"}
+  },
+  {
+    "case": "tampered-token",
+    "why": "a real token with one extra character",
+    "authorization": "Bearer {token}x",
+    "expect": {"status": 401, "code": "INVALID_TOKEN"}
+  },
+  {
+    "case": "truncated-token",
+    "why": "a real token missing its last character",
+    "authorization": "Bearer {token_truncated}",
+    "expect": {"status": 401, "code": "INVALID_TOKEN"}
+  },
+  {
+    "case": "two-tokens",
+    "authorization": "Bearer {token} {token}",
+    "expect": {"status": 401, "code": "INVALID_TOKEN"}
+  }
+]

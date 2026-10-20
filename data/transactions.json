@@ -1,0 +1,12 @@
+[{
+"userId": "123",
+"amount": 100.50,
+"type": "transfer",
+"recipientId": "456"
+},
+{
+"userId": "456",
+"amount": 3210.99,
+"type": "transfer",
+"recipientId": "123"
+}]

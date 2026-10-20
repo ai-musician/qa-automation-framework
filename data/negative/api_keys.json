@@ -1,0 +1,16 @@
+[
+  {"case": "wrong-key",            "body": {"apiKey": "wrong"}},
+  {"case": "empty-key",            "body": {"apiKey": ""}},
+  {"case": "key-with-spaces",      "why": "keys are exact; no trimming", "body": {"apiKey": " user-api-key "}},
+  {"case": "key-uppercase",        "why": "keys are case-sensitive", "body": {"apiKey": "USER-API-KEY"}},
+  {"case": "key-with-suffix",      "why": "prefix match must not be enough", "body": {"apiKey": "user-api-key-extra"}},
+  {"case": "key-null",             "body": {"apiKey": null}},
+  {"case": "key-as-number",        "body": {"apiKey": 12345}},
+  {"case": "key-as-list",          "body": {"apiKey": ["user-api-key"]}},
+  {"case": "wrong-field-name",     "why": "api_key instead of apiKey", "body": {"api_key": "user-api-key"}},
+  {"case": "empty-body",           "body": {}},
+  {"case": "no-body",              "body": null},
+  {"case": "body-is-array",        "body": [{"apiKey": "user-api-key"}]},
+  {"case": "body-is-the-key-only", "body": "user-api-key"},
+  {"case": "sql-injection",        "body": {"apiKey": "' OR '1'='1"}}
+]

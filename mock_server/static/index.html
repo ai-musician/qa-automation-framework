@@ -1,0 +1,198 @@
+<!doctype html>
+<!--
+  Mock frontend for the UI tests. Plain HTML + fetch(), served by the mock server at /ui.
+  Forms use `novalidate` so bad input reaches the API and the API's error messages are shown.
+  Elements the tests use carry a data-testid attribute.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>FinPay</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+    section { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+    label { display: block; margin: .5rem 0 .2rem; }
+    input, select { width: 100%; padding: .4rem; box-sizing: border-box; }
+    button { margin-top: .8rem; padding: .5rem 1rem; }
+    .success { color: #0a6b2d; }
+    .error { color: #b00020; }
+    .hidden { display: none; }
+    table { width: 100%; border-collapse: collapse; }
+    td, th { border-bottom: 1px solid #eee; padding: .3rem; text-align: left; }
+  </style>
+</head>
+<body>
+  <h1>FinPay</h1>
+
+  <section>
+    <h2>Sign in</h2>
+    <form id="login-form" novalidate>
+      <label for="api-key">API key</label>
+      <input id="api-key" data-testid="api-key" type="password">
+      <button data-testid="login-submit">Sign in</button>
+    </form>
+    <p data-testid="login-status"></p>
+  </section>
+
+  <section>
+    <h2>Register user</h2>
+    <form id="register-form" novalidate>
+      <label for="name">Full name</label>
+      <input id="name" data-testid="register-name">
+      <label for="email">Email</label>
+      <input id="email" data-testid="register-email" type="email">
+      <label for="account-type">Account type</label>
+      <select id="account-type" data-testid="register-account-type">
+        <option value="standard">Standard</option>
+        <option value="premium">Premium</option>
+      </select>
+      <button data-testid="register-submit">Register</button>
+    </form>
+    <div data-testid="register-result"></div>
+  </section>
+
+  <section>
+    <h2>New transaction</h2>
+    <form id="tx-form" novalidate>
+      <label for="tx-user">From user ID</label>
+      <input id="tx-user" data-testid="tx-user-id">
+      <label for="tx-type">Type</label>
+      <select id="tx-type" data-testid="tx-type">
+        <option value="transfer">Transfer</option>
+        <option value="deposit">Deposit</option>
+        <option value="withdrawal">Withdrawal</option>
+      </select>
+      <label for="tx-amount">Amount</label>
+      <input id="tx-amount" data-testid="tx-amount" inputmode="decimal">
+      <div id="recipient-row">
+        <label for="tx-recipient">Recipient user ID</label>
+        <input id="tx-recipient" data-testid="tx-recipient-id">
+      </div>
+      <button data-testid="tx-submit">Send</button>
+    </form>
+    <div data-testid="tx-result"></div>
+  </section>
+
+  <section>
+    <h2>Transaction history</h2>
+    <form id="history-form" novalidate>
+      <label for="history-user">User ID</label>
+      <input id="history-user" data-testid="history-user-id">
+      <button data-testid="history-submit">Load</button>
+    </form>
+    <div data-testid="history-result"></div>
+    <table data-testid="history-table" class="hidden">
+      <thead><tr><th>Type</th><th>Amount</th><th>Recipient</th><th>Status</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <script>
+    let token = null;
+    const $ = (testId) => document.querySelector(`[data-testid="${testId}"]`);
+
+    async function api(method, path, body) {
+      const headers = { "Content-Type": "application/json" };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+      const data = res.status === 204 ? null : await res.json();
+      return { ok: res.ok, data };
+    }
+
+    // Shows the message plus one line per field in details:
+    //   <p data-testid="error-message">Request validation failed</p>
+    //   <ul><li data-testid="error-email">email must be a valid email address</li></ul>
+    function showError(el, data) {
+      const err = (data && data.error) || { message: "Something went wrong" };
+      el.className = "error";
+      el.setAttribute("role", "alert");
+      el.innerHTML = "";
+      const p = document.createElement("p");
+      p.dataset.testid = "error-message";
+      p.textContent = err.message;
+      el.appendChild(p);
+      if (err.details) {
+        const ul = document.createElement("ul");
+        for (const [field, problem] of Object.entries(err.details)) {
+          const li = document.createElement("li");
+          li.dataset.testid = `error-${field}`;
+          li.textContent = problem;
+          ul.appendChild(li);
+        }
+        el.appendChild(ul);
+      }
+    }
+
+    function showSuccess(el, text) {
+      el.className = "success";
+      el.setAttribute("role", "status");
+      el.textContent = text;
+    }
+
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      token = null;
+      const { ok, data } = await api("POST", "/api/auth/token", { apiKey: $("api-key").value });
+      if (ok) { token = data.token; showSuccess($("login-status"), `Signed in as ${data.role}`); }
+      else showError($("login-status"), data);
+    });
+
+    document.getElementById("register-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const { ok, data } = await api("POST", "/api/users", {
+        name: $("register-name").value,
+        email: $("register-email").value,
+        accountType: $("register-account-type").value,
+      });
+      if (ok) {
+        showSuccess($("register-result"), `User created: ${data.name}`);
+        const id = document.createElement("span");
+        id.dataset.testid = "created-user-id";
+        id.textContent = data.id;
+        $("register-result").append(" (ID ", id, ")");
+      } else showError($("register-result"), data);
+    });
+
+    // recipient only makes sense for transfers
+    $("tx-type").addEventListener("change", () => {
+      document.getElementById("recipient-row").classList.toggle("hidden", $("tx-type").value !== "transfer");
+    });
+
+    document.getElementById("tx-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const raw = $("tx-amount").value.trim();
+      const body = {
+        userId: $("tx-user-id").value,
+        type: $("tx-type").value,
+        // send numbers as numbers; send anything else as typed so the API can reject it
+        amount: raw === "" || isNaN(Number(raw)) ? raw : Number(raw),
+      };
+      if (body.type === "transfer") body.recipientId = $("tx-recipient-id").value;
+      const { ok, data } = await api("POST", "/api/transactions", body);
+      if (ok) showSuccess($("tx-result"), `Transaction ${data.status}: ${data.type} of $${data.amount.toFixed(2)}`);
+      else showError($("tx-result"), data);
+    });
+
+    document.getElementById("history-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const table = $("history-table");
+      const tbody = table.querySelector("tbody");
+      tbody.innerHTML = "";
+      const { ok, data } = await api("GET", `/api/transactions/${encodeURIComponent($("history-user-id").value)}`);
+      if (!ok) { table.classList.add("hidden"); return showError($("history-result"), data); }
+      showSuccess($("history-result"), `${data.count} transaction(s)`);
+      for (const tx of data.transactions) {
+        const tr = document.createElement("tr");
+        tr.dataset.testid = "history-row";
+        for (const value of [tx.type, tx.amount.toFixed(2), tx.recipientId || "-", tx.status]) {
+          const td = document.createElement("td");
+          td.textContent = value;
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+      table.classList.toggle("hidden", data.count === 0);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,120 @@
+[
+  {
+    "case": "empty-body",
+    "why": "client sent {}: every required field must be reported at once, not just the first",
+    "body": {},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["name", "email", "accountType"]}
+  },
+  {
+    "case": "no-body",
+    "why": "POST with no JSON at all",
+    "body": null,
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["name", "email", "accountType"]}
+  },
+  {
+    "case": "wrong-field-names",
+    "why": "common client bug: username/mail/type instead of name/email/accountType",
+    "body": {"username": "Ann Lee", "mail": "ann@qa.test", "type": "premium"},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["name", "email", "accountType"]}
+  },
+  {
+    "case": "body-is-array",
+    "why": "a list of users sent to the single-user endpoint must be a 400, not a crash",
+    "body": [{"name": "Ann Lee", "email": "ann@qa.test", "accountType": "premium"}],
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["body"]}
+  },
+  {
+    "case": "body-is-string",
+    "why": "JSON that is valid but not an object",
+    "body": "Ann Lee",
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["body"]}
+  },
+  {
+    "case": "every-field-wrong-type",
+    "why": "number, boolean and list where strings are expected",
+    "override": {"name": 12345, "email": true, "accountType": ["premium"]},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["name", "email", "accountType"]}
+  },
+  {
+    "case": "every-field-wrong-value",
+    "why": "right types, wrong values: all three problems reported together",
+    "override": {"name": "", "email": "not-an-email", "accountType": "gold"},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["name", "email", "accountType"]}
+  },
+  {
+    "case": "name-null",
+    "override": {"name": null},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["name"]}
+  },
+  {
+    "case": "name-as-object",
+    "why": "first/last split sent as an object",
+    "override": {"name": {"first": "Ann", "last": "Lee"}},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["name"]}
+  },
+  {
+    "case": "name-one-char-after-trim",
+    "why": "padding must not count toward the minimum length",
+    "override": {"name": "   J   "},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["name"]}
+  },
+  {
+    "case": "name-over-100-chars",
+    "why": "a real person's full name (Hubert Blaine Wolfeschlegelsteinhausenbergerdorff Sr.); still needs an upper bound",
+    "override": {"name": "Adolph Blaine Charles David Earl Frederick Gerald Hubert Irvin John Kenneth Lloyd Martin Nero Oliver Paul Quincy Randolph Sherman Thomas Uncas Victor William Xerxes Yancy Zeus Wolfeschlegelsteinhausenbergerdorff"},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["name"]}
+  },
+  {
+    "case": "name-with-newline",
+    "why": "control characters break CSV exports, logs and bank statements",
+    "override": {"name": "Ann\nLee"},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["name"]}
+  },
+  {
+    "case": "email-missing-local-part",
+    "override": {"email": "@qa.test"},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["email"]}
+  },
+  {
+    "case": "email-double-at",
+    "override": {"email": "ann@@qa.test"},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["email"]}
+  },
+  {
+    "case": "email-with-space",
+    "override": {"email": "ann lee@qa.test"},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["email"]}
+  },
+  {
+    "case": "email-trailing-dot",
+    "override": {"email": "ann@qa."},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["email"]}
+  },
+  {
+    "case": "email-no-domain-dot",
+    "override": {"email": "ann@localhost"},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["email"]}
+  },
+  {
+    "case": "email-local-part-over-64-chars",
+    "why": "RFC 5321 limit; longer addresses can't receive mail",
+    "override": {"email": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@qa.test"},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["email"]}
+  },
+  {
+    "case": "account-type-wrong-case",
+    "override": {"accountType": "Premium"},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["accountType"]}
+  },
+  {
+    "case": "account-type-padded",
+    "override": {"accountType": " premium "},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["accountType"]}
+  },
+  {
+    "case": "missing-email-only",
+    "why": "removing one field leaves the others valid: only email must be reported",
+    "remove": ["email"],
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["email"]}
+  }
+]

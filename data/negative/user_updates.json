@@ -1,0 +1,56 @@
+[
+  {
+    "case": "empty-body",
+    "body": {},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["body"]}
+  },
+  {
+    "case": "body-is-array",
+    "body": [{"accountType": "premium"}],
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["body"]}
+  },
+  {
+    "case": "only-unknown-fields",
+    "why": "trying to set role or id must not be silently accepted as an update",
+    "body": {"role": "admin", "id": "999"},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["body"]}
+  },
+  {
+    "case": "name-too-short",
+    "body": {"name": "J"},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["name"]}
+  },
+  {
+    "case": "name-null",
+    "why": "null must not erase the name",
+    "body": {"name": null},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["name"]}
+  },
+  {
+    "case": "email-invalid",
+    "body": {"email": "ann@@qa.test"},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["email"]}
+  },
+  {
+    "case": "account-type-unknown",
+    "body": {"accountType": "gold"},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["accountType"]}
+  },
+  {
+    "case": "one-valid-one-invalid",
+    "why": "a partly valid update must change nothing and report only the bad field",
+    "body": {"name": "Ann Lee", "accountType": "gold"},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["accountType"]}
+  },
+  {
+    "case": "email-taken",
+    "body": {"email": "john@example.com"},
+    "expect": {"status": 409, "code": "EMAIL_EXISTS"}
+  },
+  {
+    "case": "email-taken-different-case",
+    "why": "emails are case-insensitive: JOHN@EXAMPLE.COM is the same mailbox",
+    "body": {"email": "JOHN@EXAMPLE.COM"},
+    "expect": {"status": 409, "code": "EMAIL_EXISTS"}
+  }
+]

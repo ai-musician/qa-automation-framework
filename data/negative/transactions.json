@@ -1,0 +1,123 @@
+[
+  {
+    "case": "empty-body",
+    "body": {},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["userId", "amount", "type"]}
+  },
+  {
+    "case": "body-is-array",
+    "why": "a batch sent to the single-transaction endpoint must be a 400, not a crash",
+    "body": [{"userId": "123", "amount": 10, "type": "deposit"}],
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["body"]}
+  },
+  {
+    "case": "amount-as-string",
+    "why": "\"100.50\" looks like a number but is text",
+    "override": {"amount": "100.50"},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["amount"]}
+  },
+  {
+    "case": "amount-boolean",
+    "why": "in Python true == 1, so a careless check would accept it as $1",
+    "override": {"amount": true},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["amount"]}
+  },
+  {
+    "case": "amount-null",
+    "override": {"amount": null},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["amount"]}
+  },
+  {
+    "case": "amount-zero",
+    "override": {"amount": 0},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["amount"]}
+  },
+  {
+    "case": "amount-minus-one-cent",
+    "why": "smallest negative amount: boundary just below zero",
+    "override": {"amount": -0.01},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["amount"]}
+  },
+  {
+    "case": "amount-fraction-of-a-cent",
+    "why": "money has 2 decimals; 10.005 can't be represented in cents",
+    "override": {"amount": 10.005},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["amount"]}
+  },
+  {
+    "case": "amount-infinity",
+    "why": "1e309 overflows to Infinity when parsed; must never become a balance. Sent as raw text: it isn't valid JSON for most clients",
+    "raw_body": "{\"userId\": \"123\", \"amount\": 1e309, \"type\": \"deposit\"}",
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["amount"]}
+  },
+  {
+    "case": "amount-over-limit",
+    "why": "one cent above the 1,000,000.00 per-transaction limit",
+    "override": {"amount": 1000000.01},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["amount"]}
+  },
+  {
+    "case": "type-unknown",
+    "override": {"type": "refund"},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["type"]}
+  },
+  {
+    "case": "type-uppercase",
+    "override": {"type": "TRANSFER"},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["type"]}
+  },
+  {
+    "case": "type-missing",
+    "remove": ["type"],
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["type"]}
+  },
+  {
+    "case": "user-id-as-number",
+    "why": "ids are strings; 123 and \"123\" must not be treated as the same",
+    "override": {"userId": 123},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["userId"]}
+  },
+  {
+    "case": "user-id-empty",
+    "override": {"userId": ""},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["userId"]}
+  },
+  {
+    "case": "transfer-without-recipient",
+    "remove": ["recipientId"],
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["recipientId"]}
+  },
+  {
+    "case": "transfer-recipient-empty",
+    "override": {"recipientId": ""},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["recipientId"]}
+  },
+  {
+    "case": "transfer-to-self",
+    "override": {"recipientId": "123"},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["recipientId"]}
+  },
+  {
+    "case": "several-problems-at-once",
+    "why": "all problems reported in one response, so the user can fix the form in one go",
+    "override": {"userId": "", "amount": -5, "type": "refund"},
+    "expect": {"status": 400, "code": "VALIDATION_ERROR", "fields": ["userId", "amount", "type"]}
+  },
+  {
+    "case": "unknown-recipient",
+    "override": {"recipientId": "does-not-exist"},
+    "expect": {"status": 404, "code": "RECIPIENT_NOT_FOUND"}
+  },
+  {
+    "case": "from-another-customers-account",
+    "why": "customer 123 tries to move money out of customer 456's account",
+    "override": {"userId": "456", "recipientId": "123"},
+    "expect": {"status": 403, "code": "FORBIDDEN"}
+  },
+  {
+    "case": "from-unknown-account",
+    "why": "must be 403, not 404: a customer must not learn which account ids exist",
+    "override": {"userId": "does-not-exist"},
+    "expect": {"status": 403, "code": "FORBIDDEN"}
+  }
+]

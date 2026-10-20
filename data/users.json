@@ -1,0 +1,5 @@
+[
+  {"name": "Runner Last1", "email": "runner@qa.test", "accountType": "premium"},
+  {"name": "Swimmer Last2", "email": "swimmer@qa.test", "accountType": "standard"},
+  {"name": "Cyclist Last3", "email": "cyclist@qa.test", "accountType": "premium"}
+]
