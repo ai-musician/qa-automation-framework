@@ -257,13 +257,16 @@ What the numbers mean and don't mean:
 | Job | Runs | Pull request | Merge to `main` |
 |---|---|---|---|
 | **API + UI tests** | `pytest` | ✅ | ✅ |
-| **Performance tests** | `pytest -m perf`, only if the first job passed | normal load (`PERF_LOAD=1`): a quick check before merging | **3× load** (`PERF_LOAD=3`), on the code that gets deployed |
+| **Performance tests** | `pytest -m perf`, only if the first job passed **and** a performance-relevant file changed | normal load (`PERF_LOAD=1`): a quick check before merging | **3× load** (`PERF_LOAD=3`), on the code that gets deployed |
 
 - Reports are attached to every run under **Artifacts** (HTML report, JUnit XML, API log, failure screenshots,
   performance HTML/JSON), even when tests fail.
 - Performance results appear as a table on the run's **summary page**, so a reviewer sees p95 and errors per scenario
   without downloading anything.
 - A new push to a PR cancels the previous, now outdated run.
+- Performance tests are skipped when a change can't affect performance: they run only if the server code
+  (`mock_server/*.py`), `tests/perf/`, `utils/`, test setup (`conftest.py`, `config.py`, `pytest.ini`), `requirements.txt`
+  or the workflow changed. A README or `.gitignore` edit runs the API + UI tests only. Manual runs always include them.
 - To block merging on failures, make both jobs **required status checks** in the repository's branch protection
   settings for `main`.
 
