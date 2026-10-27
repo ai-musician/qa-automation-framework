@@ -8,8 +8,9 @@
 #                (manual runs from the Actions tab always include it)
 #                pull request: normal load (PERF_LOAD=1), a quick check before merging
 #                merge to main: 3x the load (PERF_LOAD=3), on the code that will be deployed
+#   kpi          QA KPIs from the two jobs' reports (utils/kpi.py), always runs; reports, never fails the build
 #
-# Reports are attached to each run under "Artifacts"; performance results also show on the run's summary page.
+# Reports are attached to each run under "Artifacts"; performance results and KPIs also show on the run's summary page.
 
 name: tests
 
@@ -121,3 +122,45 @@ jobs:
           name: performance-reports
           path: reports/
           retention-days: 30
+
+  kpi:
+    name: QA KPIs
+    needs: [functional, performance]
+    if: always()                  # also when tests failed or performance was skipped: that's what KPIs are for
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read               # the GitHub CLI reads this workflow's recent runs for the pipeline KPIs
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"  # utils/kpi.py uses the standard library only: nothing to install
+
+      - name: Download functional reports
+        uses: actions/download-artifact@v4
+        continue-on-error: true   # missing if that job didn't get far enough to upload
+        with:
+          name: functional-reports
+          path: reports/functional
+
+      - name: Download performance reports
+        uses: actions/download-artifact@v4
+        continue-on-error: true   # missing when performance tests were skipped
+        with:
+          name: performance-reports
+          path: reports/performance
+
+      - name: Calculate KPIs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -m utils.kpi --functional reports/functional --perf reports/performance --out reports/kpi >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload KPI report
+        uses: actions/upload-artifact@v4
+        with:
+          name: kpi-report
+          path: reports/kpi/
+          retention-days: 90

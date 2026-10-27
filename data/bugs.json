@@ -1,0 +1,15 @@
+[
+  {"bug": "amount \"abc\" crashed the server (500)", "severity": "high", "area": "crash", "foundBy": "API tests", "status": "fixed"},
+  {"bug": "Transactions accepted for users that don't exist", "severity": "critical", "area": "money", "foundBy": "API tests", "status": "fixed"},
+  {"bug": "Transfer with no recipientId, or to yourself, accepted", "severity": "high", "area": "money", "foundBy": "API tests", "status": "fixed"},
+  {"bug": "404 for an existing user with no transactions", "severity": "medium", "area": "contract", "foundBy": "API tests", "status": "fixed"},
+  {"bug": "Any logged-in user could list all users", "severity": "critical", "area": "security", "foundBy": "API tests", "status": "fixed"},
+  {"bug": "Any logged-in user could read or create any user's transactions", "severity": "critical", "area": "security", "foundBy": "API tests", "status": "fixed"},
+  {"bug": "Any customer could update any other user", "severity": "critical", "area": "security", "foundBy": "API tests", "status": "fixed"},
+  {"bug": "Validation errors returned a generic message", "severity": "low", "area": "contract", "foundBy": "API tests", "status": "fixed"},
+  {"bug": "A JSON list or string body crashed the server (500)", "severity": "high", "area": "crash", "foundBy": "negative data tests", "status": "fixed"},
+  {"bug": "Invalid emails accepted", "severity": "medium", "area": "validation", "foundBy": "negative data tests", "status": "fixed"},
+  {"bug": "Names with line breaks or over 100 characters accepted", "severity": "medium", "area": "validation", "foundBy": "negative data tests", "status": "fixed"},
+  {"bug": "An amount of 1e309 (Infinity) accepted", "severity": "high", "area": "money", "foundBy": "negative data tests", "status": "fixed"},
+  {"bug": "No upper limit on a transaction amount", "severity": "high", "area": "money", "foundBy": "negative data tests", "status": "fixed"}
+]

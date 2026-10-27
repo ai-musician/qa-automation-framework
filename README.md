@@ -40,7 +40,7 @@ After a run, open the report: `open reports/report.html`
 
 ```
 .github/workflows/
-  tests.yml           CI: functional + performance tests on every pull request and merge to main
+  tests.yml           CI: functional + performance tests, then QA KPIs, on every pull request and merge to main
 mock_server/
   app.py              The system under test: a Flask stand-in for the API gateway + services
   static/index.html   Mock frontend (sign in, register user, send transaction, history)
@@ -51,6 +51,7 @@ utils/
   test_data.py        Loads negative test cases from data/negative/*.json
   load.py             Load generator: parallel requests, latency percentiles, HTML/JSON report
   assertions.py       Custom assertions with readable failure messages
+  kpi.py              QA KPIs from the run's reports (quality, coverage, tests, pipeline, performance)
 tests/
   api/                API tests: auth, users, transactions
     test_negative_data.py   Data-driven negative tests, one run per case in data/negative/
@@ -62,6 +63,7 @@ tests/
 data/
   negative/           Negative test data: 76 invalid requests across 5 files (users, user updates,
                       transactions, API keys, auth headers), each with the expected error
+  bugs.json           Bugs found before release, with severity (feeds the KPI report)
   *.json              Seed data for the scripts
 scripts/              Load seed data into a running server by hand
 reports/              Generated: HTML report, JUnit XML, API log, failure screenshots (git-ignored)
@@ -82,6 +84,7 @@ implements the same contract in Flask, with in-memory dicts standing in for Mong
 | `GET /api/users` | list users (**admin only**) | 200, 401, 403 |
 | `PATCH /api/users/:id` | update user (own account only; admins any) | 200, 400, 401, 403, 404, 409 |
 | `DELETE /api/users/:id` | delete user (**admin only**) | 204, 401, 403, 404 |
+| `POST /api/users/:id/api-keys` | issue an API key for that user (**admin only**; used by the load tests to log in as many users) | 201, 401, 403, 404 |
 | `POST /api/transactions` | create transaction (own account only) | 201, 400, 401, 403, 404 |
 | `GET /api/transactions/:userId` | a user's transactions (own only; admins any) | 200, 401, 403, 404 |
 | `GET /ui` | mock frontend | 200 |
@@ -217,22 +220,55 @@ Every run writes to `reports/`:
 | `api.log` | every API request and response (method, URL, status, bodies) |
 | `artifacts/<test>/test-failed-1.png` | screenshot of the browser at the moment a UI test failed |
 | `performance.html` / `performance.json` | after `pytest -m perf`: req/s, p50/p95/p99, errors and pass/fail per scenario |
+| `kpi.md` / `kpi.json` | after `python -m utils.kpi`: the QA KPIs (see below) |
+
+---
+
+## QA KPIs
+
+Every CI run ends with a **QA KPIs** table on its summary page (`utils/kpi.py`, standard library only). Each KPI
+is tied to a goal and shown next to its target, and every number is measured from what the run produces:
+
+| Area | KPI | Target | Measured from |
+|---|---|---|---|
+| Quality | Bugs caught before release, by severity; open critical bugs | 0 open critical | `data/bugs.json` |
+| Coverage | Documented endpoints tested; documented status codes tested | 100% | the API table above vs `api.log` (every request the tests sent) |
+| Tests | Functional tests passing; run time | 100% | `junit.xml` |
+| Pipeline | CI pass rate of the last 20 runs on `main`; median time from push to result | ≥ 95%; ≤ 5 min | GitHub CLI |
+| Performance | Scenarios within target; error rate under load; slowest p95 as % of its target; data integrity checks | all; 0%; ≤ 100%; all | `performance.json` |
+
+Status-code coverage earned its place on the first run: it listed 7 documented responses no test checked (401 on
+five routes, two 404s). Tests for them were added, and it now reports 35 / 35.
+
+What I left out on purpose: the number of tests (100 weak tests can still miss the bug) and line coverage of the
+mock server. With a real system and history I'd add **defect leakage** (bugs found in production ÷ all bugs),
+**flaky test rate** (tests that pass on a rerun of the same commit), **mean time to detect** from monitoring, and
+**change failure rate** (releases that caused an incident), and track all of them as trends per release.
+
+Run it locally after the tests: `pytest`, then `python -m utils.kpi --perf <folder with performance.json>`
+(`pytest -m perf` writes its own `junit.xml` and `api.log` to `reports/`, so keep its `performance.json` elsewhere or run it first).
 
 ---
 
 ## Performance testing
 
 The PDF's overview lists performance testing as part of the assessment, so the framework includes a small,
-dependency-free load generator (`utils/load.py`: threads + `requests`) and six scenarios:
+dependency-free load generator (`utils/load.py`: threads + `requests`) and seven scenarios:
 
 | Scenario | Load | Checks |
 |---|---|---|
-| login | 200 requests, 10 parallel | p95 ≤ 250 ms, 0 errors |
+| login | 200 requests, 10 parallel, one user | p95 ≤ 250 ms, 0 errors |
+| login, different users | 200 users, each with their own API key, 10 parallel | p95 ≤ 250 ms, 0 errors, and **each token belongs to its user**: it reads its own user's transactions (200) and is refused the next user's (403) |
 | get user | 500 requests, 20 parallel | p95 ≤ 150 ms, 0 errors |
 | create user | 300 requests, 20 parallel | p95 ≤ 250 ms, 0 errors |
 | create transaction | 300 requests, 20 parallel | p95 ≤ 250 ms, 0 errors, **no lost writes**: the account history grows by exactly the number of 201s |
 | history read + write mix | 400 requests, 20 parallel, half reads, half writes | p95 ≤ 300 ms, 0 errors (reading a list while it's being written to is a classic crash) |
 | same email ×20 in parallel | 20 sign-ups at once with one email | **exactly one** 201, nineteen 409s, and the email stored once |
+
+Why different users: 200 logins by one user mostly measure a cache, and in a real system would run into per-user
+rate limits or account lockout. The `login_users` fixture uses the admin key to create the users and their keys
+(`POST /api/users/:id/api-keys`) before timing starts, and deletes them afterwards. Against staging, that admin
+credential would be the only secret; the test users are created fresh on every run, so no keys are stored anywhere.
 
 How it measures: each run starts with 10 unmeasured warm-up requests, then reports requests per second and
 p50/p95/p99/max latency. A scenario passes when p95 is within target **and** no request failed.
@@ -258,7 +294,10 @@ What the numbers mean and don't mean:
 |---|---|---|---|
 | **API + UI tests** | `pytest` | ✅ | ✅ |
 | **Performance tests** | `pytest -m perf`, only if the first job passed **and** a performance-relevant file changed | normal load (`PERF_LOAD=1`): a quick check before merging | **3× load** (`PERF_LOAD=3`), on the code that gets deployed |
+| **QA KPIs** | `python -m utils.kpi` on the two jobs' reports, always | ✅ | ✅ |
 
+- A third job, **QA KPIs**, always runs after the other two (also when they failed or performance was skipped)
+  and adds the [KPI table](#qa-kpis) to the summary page. It reports; it never fails the build.
 - Reports are attached to every run under **Artifacts** (HTML report, JUnit XML, API log, failure screenshots,
   performance HTML/JSON), even when tests fail.
 - Performance results appear as a table on the run's **summary page**, so a reviewer sees p95 and errors per scenario
@@ -275,7 +314,8 @@ Run the same load locally: `PERF_LOAD=3 pytest -m perf`.
 ## Bugs found in the mock API (and fixed)
 
 Writing tests against earlier versions of the mock API surfaced these defects. The bottom five were all found
-by the data-driven negative tests on their first run (16 of 76 cases failed against the old server):
+by the data-driven negative tests on their first run (16 of 76 cases failed against the old server). The same list, with a severity for each, is in
+`data/bugs.json` and feeds the [QA KPIs](#qa-kpis):
 
 | Bug | Impact | Fix |
 |---|---|---|

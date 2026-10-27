@@ -6,7 +6,7 @@ import config
 API_KEY = config.env.api_key
 ADMIN_API_KEY = config.env.admin_api_key
 
-pytestmark = pytest.mark.api
+pytestmark = [pytest.mark.api, pytest.mark.auth]
 
 # ---------- authentication ----------
 def test_valid_api_key_return_token(client):
@@ -26,10 +26,23 @@ def test_missing_api_key_return_401(client):
     assert "token" not in res.json()
     assert_api_error(res, "INVALID_API_KEY", 401)
 
+# every route except POST /api/auth/token needs a token
+PROTECTED_ROUTES = [
+    ("post", "/api/users"),
+    ("get", "/api/users"),
+    ("get", f"/api/users/{SENDER_ID}"),
+    ("patch", f"/api/users/{SENDER_ID}"),
+    ("delete", f"/api/users/{SENDER_ID}"),
+    ("post", f"/api/users/{SENDER_ID}/api-keys"),
+    ("post", "/api/transactions"),
+    ("get", f"/api/transactions/{SENDER_ID}"),
+]
+
 @pytest.mark.negative
-def test_protected_routes_reject_missing_token(client):
-    assert_api_error(client.get(f"/api/users/{SENDER_ID}"), "UNAUTHENTICATED", 401)
-    assert_api_error(client.post("/api/transactions", {}), "UNAUTHENTICATED", 401)
+@pytest.mark.parametrize("method, path", PROTECTED_ROUTES, ids=[f"{m.upper()} {p}" for m, p in PROTECTED_ROUTES])
+def test_protected_routes_reject_missing_token(client, method, path):
+    res = getattr(client, method)(path)
+    assert_api_error(res, "UNAUTHENTICATED", 401)
 
 @pytest.mark.negative
 def test_bogus_token_returns_401(client):
@@ -67,3 +80,17 @@ def test_only_admin_can_delete_user(user_api, admin_api, fresh_user):
 def test_user_cannot_update_other_user(user_api, fresh_user):
     res = user_api.patch(f"/api/users/{fresh_user['id']}", {"accountType": "premium"})
     assert_api_error(res, "FORBIDDEN", 403)
+
+def test_admin_can_read_any_users_transaction(admin_api, fresh_user):
+    created=admin_api.post("/api/transactions", make_deposit(userId=fresh_user["id"]))
+    assert_status(created, 201)
+
+    res=admin_api.get(f"/api/transactions/{fresh_user['id']}")
+    assert_status(res, 200)
+    body = res.json()
+    assert body["count"] == 1
+    #assert body["count"] == len(body["transactions"])
+    assert created.json() in body["transactions"]
+    #assert all(tx["userId"]==fresh_user["id"] for tx in body["transactions"])
+
+

@@ -47,3 +47,7 @@ def test_create_transaction_without_token_returns_401(client: Client):
 def test_invalid_transaction_is_rejected(admin_api, override, code, status):
     res = admin_api.post("/api/transactions", make_transaction(**override))
     assert_api_error(res, code, status)
+@pytest.mark.negative
+def test_list_transactions_of_unknown_user_returns_404(admin_api):
+    res = admin_api.get("/api/transactions/invalid-id")
+    assert_api_error(res, "USER_NOT_FOUND", 404)

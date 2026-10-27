@@ -7,6 +7,7 @@ The fake fintech API (plus a tiny web UI) that the tests run against.
     GET    /api/users/<id>              get a user               -> 200 / 404
     PATCH  /api/users/<id>              update own user (admin: any) -> 200 / 400 / 403 / 404
     DELETE /api/users/<id>              delete a user (admin)    -> 204 / 403 / 404
+    POST   /api/users/<id>/api-keys     issue an API key for that user (admin) -> 201 / 403 / 404
     POST   /api/transactions            create a transaction     -> 201 / 400 / 403 / 404
     GET    /api/transactions/<userId>   a user's transactions    -> 200 / 403 / 404
     GET    /ui                          mock frontend (registration + transactions)
@@ -33,7 +34,8 @@ transactions: dict[str, dict] = {}   # transaction id -> transaction
 sessions: dict[str, dict] = {}       # token -> {role, userId} (would be Redis in the real system)
 
 # Each API key identifies a caller: a role, and (for normal users) which user they are.
-# In the real system every customer would have their own key; the mock has one of each role.
+# In the real system every customer would have their own key; the mock starts with one of each role,
+# and an admin can issue more with POST /api/users/<id>/api-keys (the load tests log in as many users).
 API_KEYS = {
     "user-api-key": {"role": "user", "userId": "123"},    # seed user 123, John Doe: a premium customer, but role user, not admin
     "admin-api-key": {"role": "admin", "userId": None},   # back office: may act for anyone
@@ -212,7 +214,21 @@ def update_user(user_id):
 def delete_user(user_id):
     if users.pop(user_id, None) is None:
         return fail(404, "USER_NOT_FOUND", f"User {user_id} not found")
+    # a deleted user's keys stop working
+    for key in [k for k, caller in API_KEYS.items() if caller["userId"] == user_id]:
+        del API_KEYS[key]
     return "", 204
+
+
+@app.post("/api/users/<user_id>/api-keys")
+@request_auth
+@admin_only
+def issue_api_key(user_id):
+    if user_id not in users:
+        return fail(404, "USER_NOT_FOUND", f"User {user_id} not found")
+    api_key = f"key-{uuid.uuid4().hex}"
+    API_KEYS[api_key] = {"role": "user", "userId": user_id}
+    return jsonify({"apiKey": api_key, "userId": user_id}), 201
 
 
 # ---------- transactions ----------

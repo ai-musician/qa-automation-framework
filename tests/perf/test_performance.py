@@ -17,6 +17,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+import requests
 
 import config
 from utils.assertions import assert_status
@@ -63,6 +64,42 @@ def auth(user_api):
 def test_login_under_load(perf_results):
     send = lambda s, i: s.post(f"{API}/api/auth/token", json={"apiKey": config.env.api_key})
     check(run_load("login", send, requests_total=n(200), concurrency=10), 250, perf_results)
+
+
+@pytest.fixture
+def login_users(admin_api):
+    """n(200) new users, each with their own API key. Setup, so not timed; deleted afterwards."""
+    created = []
+    for _ in range(n(200)):
+        user = admin_api.post("/api/users", make_user(email=f"login-{uuid.uuid4().hex}@qa.test"))
+        assert_status(user, 201)
+        key = admin_api.post(f"/api/users/{user.json()['id']}/api-keys")
+        assert_status(key, 201)
+        created.append(key.json())                      # {"apiKey": ..., "userId": ...}
+    yield created
+    for user in created:
+        admin_api.delete(f"/api/users/{user['userId']}")
+
+
+def test_login_different_users_under_load(login_users, perf_results):
+    """Every user logs in with their own key, and each token must belong to the user who got it."""
+    tokens = {}                                         # request number -> token
+
+    def send(s, i):
+        res = s.post(f"{API}/api/auth/token", json={"apiKey": login_users[i % len(login_users)]["apiKey"]})
+        if res.status_code == 200:
+            tokens[i] = res.json()["token"]
+        return res
+
+    check(run_load("login, different users", send, requests_total=len(login_users), concurrency=10), 250, perf_results)
+
+    # after the load: each token may read its own user's transactions (200) and not the next user's (403)
+    for i, token in tokens.items():
+        own = login_users[i % len(login_users)]["userId"]
+        other = login_users[(i + 1) % len(login_users)]["userId"]
+        headers = {"Authorization": f"Bearer {token}"}
+        assert_status(requests.get(f"{API}/api/transactions/{own}", headers=headers), 200)
+        assert_status(requests.get(f"{API}/api/transactions/{other}", headers=headers), 403)
 
 
 def test_get_user_under_load(auth, perf_results):
