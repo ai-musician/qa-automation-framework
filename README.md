@@ -450,7 +450,7 @@ by its service name (`http://api:5050`), as they would reach a deployed service.
 | Job | Runs | Pull request | Merge to `main` |
 |---|---|---|---|
 | **API + UI tests** | `docker compose run --rm tests` | ✅ | ✅ |
-| **Performance tests** | `docker compose run --rm tests pytest -m perf`, only if the first job passed **and** a performance-relevant file changed | normal load (`PERF_LOAD=1`): a quick check before merging | **3× load** (`PERF_LOAD=3`), on the code that gets deployed |
+| **Performance tests** | `docker compose run --rm tests pytest -m perf`, only if the first job passed; on a pull request, also only if a performance-relevant file changed (not docs, the README, or the dashboard and report styling) | normal load (`PERF_LOAD=1`): a quick check before merging | **3× load** (`PERF_LOAD=3`), on the code that gets deployed |
 | **QA KPIs** | `python -m utils.kpi` on the two jobs' reports, always | ✅ | ✅ |
 | **Allure report** | builds the report from both jobs' results, with history, and publishes it to GitHub Pages | - | ✅ |
 | **Tests on AWS QA environment** | creates the environment, runs API + UI tests against it, deletes it, checks nothing is left | - | ✅ |
