@@ -23,4 +23,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 # the API runs in its own container, so the tests don't start one
 ENV START_MOCK_SERVER=false
-CMD ["pytest"]
+# -n auto: run the tests in parallel, one worker per CPU core (pytest-xdist; load tests stay in one process)
+CMD ["pytest", "-n", "auto"]

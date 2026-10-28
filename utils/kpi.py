@@ -9,7 +9,7 @@ Metric definitions and goals: docs/KPIs.md. Standard library only.
 
 Sources:
   bugs             data/bugs.json: bugs found before release, with severity
-  coverage         README API table (the documented endpoints + status codes) vs api.log (what the tests sent)
+  coverage         README API table (the documented endpoints + status codes) vs api*.log (what the tests sent)
   test results     junit.xml from the functional run
   performance      performance.json from pytest -m perf
   CI history       this workflow's runs on main, and their performance reports for trends (GitHub CLI;
@@ -63,19 +63,21 @@ def documented_endpoints(readme: Path) -> dict[tuple[str, str], set[int]]:
     return endpoints
 
 
-def sent_requests(api_log: Path) -> set[tuple[str, str, int]]:
-    """{(method, path, status)} from api.log lines like: POST http://localhost:5050/api/users -> 201"""
+def sent_requests(folder: Path) -> set[tuple[str, str, int]]:
+    """{(method, path, status)} from lines like: POST http://localhost:5050/api/users -> 201
+    in api.log, or in api-gw0.log, api-gw1.log, ... when the tests ran in parallel (pytest -n)."""
     line = re.compile(r"^(GET|POST|PUT|PATCH|DELETE) (\S+) -> (\d{3})$")
     sent = set()
-    for text in api_log.read_text().splitlines() if api_log.exists() else []:
-        if m := line.match(text):
-            sent.add((m[1], urlsplit(m[2]).path, int(m[3])))
+    for api_log in folder.glob("api*.log"):
+        for text in api_log.read_text().splitlines():
+            if m := line.match(text):
+                sent.add((m[1], urlsplit(m[2]).path, int(m[3])))
     return sent
 
 
-def coverage(readme: Path, api_log: Path) -> dict:
+def coverage(readme: Path, reports: Path) -> dict:
     endpoints = documented_endpoints(readme)
-    sent = sent_requests(api_log)
+    sent = sent_requests(reports)
     hit_endpoints, hit_codes, missing = 0, 0, []
     for (method, pattern), codes in endpoints.items():
         seen = {status for m, path, status in sent if m == method and re.match(pattern, path)}
@@ -332,7 +334,7 @@ def to_markdown(k: dict, sections: dict, latency: list, callouts: list, history:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--functional", type=Path, default=ROOT / "reports", help="folder with junit.xml + api.log")
+    parser.add_argument("--functional", type=Path, default=ROOT / "reports", help="folder with junit.xml + api*.log")
     parser.add_argument("--perf", type=Path, default=ROOT / "reports", help="folder with performance.json")
     parser.add_argument("--out", type=Path, default=ROOT / "reports")
     args = parser.parse_args()
@@ -341,7 +343,7 @@ def main():
     perf_json = args.perf / "performance.json"
     kpis = {
         "bugs": bugs(ROOT / "data" / "bugs.json"),
-        "coverage": coverage(ROOT / "README.md", args.functional / "api.log"),
+        "coverage": coverage(ROOT / "README.md", args.functional),
         "tests": test_results(args.functional / "junit.xml"),
         "performance": json.loads(perf_json.read_text()) if perf_json.exists() else None,
         "operational": operational(runs),

@@ -30,6 +30,7 @@ pytest                      # run everything (starts the mock server automatical
 | `pytest -m ui --browser firefox` | UI tests in another browser (chromium / firefox / webkit) |
 | `pytest -m perf` | performance and concurrency tests (**not** included in a plain `pytest` run) |
 | `pytest -k transaction` | tests with "transaction" in the name |
+| `pytest -n auto` | all tests in parallel, one worker per CPU core (pytest-xdist; see below) |
 | `ENV_NAME=staging pytest` | run against another environment (see below) |
 
 After a run, open the report: `open reports/report.html`
@@ -37,7 +38,7 @@ After a run, open the report: `open reports/report.html`
 ### Or in Docker (nothing to install but Docker)
 
 ```bash
-docker compose run --rm tests                    # API + UI tests: the API and the tests in separate containers
+docker compose run --rm tests                    # API + UI tests in parallel: the API and the tests in separate containers
 docker compose run --rm tests pytest -m perf     # performance tests (PERF_LOAD=3 docker compose run ... for 3x)
 docker compose run --rm tests pytest -m api      # any pytest command works the same way
 docker compose up api                            # just the API, at http://localhost:5050
@@ -86,7 +87,7 @@ mock_server/
   app.py              The system under test: a Flask stand-in for the API gateway + services
   static/index.html   Mock frontend (sign in, register user, send transaction, history)
 config.py             Environment configuration (which URLs, which API keys)
-conftest.py           pytest fixtures: start server, API clients (logged out / user / admin), fresh_user
+conftest.py           Starts the mock server once (also for parallel runs); fixtures: API clients, fresh_user
 utils/
   factories.py        Test data factories (make_user, make_transaction) built on Faker
   test_data.py        Loads negative test cases from data/negative/*.json
@@ -225,6 +226,20 @@ the most common cause of flaky UI tests: reading the page before the server has 
 
 **UI action, API verification.** `test_register_user` registers through the browser, then fetches the user through
 the API to confirm what was actually stored. This checks that the UI and backend agree, not just what the screen shows.
+
+**Parallel runs with pytest-xdist.** `pytest -n auto` starts one worker process per CPU core and hands each one a
+share of the tests. Three things make that safe:
+- *One server for all workers.* A session fixture would run once in every worker: four servers fighting over port
+  5050. `conftest.py` starts the mock server in `pytest_configure` in the main pytest process instead, before any
+  worker starts, and stops it in `pytest_unconfigure`. Workers are recognised by `config.workerinput`.
+- *No shared data.* Every test creates its own users and transactions, so tests can run in any order and at the same
+  time. Tests that read seed user 123's history only check what is inside one response.
+- *One log file per worker.* Workers log to `reports/api-gw0.log`, `api-gw1.log`, ... instead of all writing over
+  `reports/api.log`; the KPI coverage reads them all. JUnit and HTML reports are merged by xdist itself.
+
+Load tests never run in parallel: workers would compete for the CPU and distort each other's latency. The perf
+fixture skips them inside a worker, so `pytest -m perf` stays a single process. Measured on an 8-core laptop:
+124 functional tests take 3.9 s in one process and 2.3 s with `-n auto`; CI and Docker use `-n auto`.
 
 **Docker: one image for the API, one for the tests.** The tests image starts from Microsoft's Playwright image at
 the same version as `requirements.txt`, so the browsers always match the library and nobody installs them by hand.
@@ -399,8 +414,6 @@ by the data-driven negative tests on their first run (16 of 76 cases failed agai
   very large request bodies, and duplicate JSON keys.
 - **Fail on performance regressions:** the KPI review already calls out a TP99 that is 25% worse than its trend over
   the last 8 merges; on a real service with stable test hardware I'd make that block the merge, not just warn.
-- **Parallel runs:** `pytest-xdist`. The tests already avoid shared data; the server fixture would need
-  to start once for all workers instead of once per worker.
 - **Contract tests:** validate responses against an OpenAPI schema so services and the gateway can't drift apart.
 - **Bigger load tests:** k6 or Locust for longer runs (soak tests over hours, ramping to find the breaking point),
   run from CI against staging rather than a laptop.

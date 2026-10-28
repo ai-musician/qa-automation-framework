@@ -13,6 +13,7 @@ team's SLOs. Results go to reports/performance.html, .json and .md (the .md is s
 
 PERF_LOAD multiplies the request counts: PERF_LOAD=3 pytest -m perf sends 3x the requests (CI does this on main).
 """
+import os
 import uuid
 from pathlib import Path
 
@@ -38,6 +39,10 @@ REPORTS = Path(__file__).parents[2] / "reports"
 @pytest.fixture(scope="module")
 def perf_results():
     """Every scenario adds its Summary here; after the last test, the reports are written."""
+    # Load tests measure latency: parallel workers (pytest -n) would compete for the same CPU and distort each
+    # other's numbers, and each worker would write its own partial report. So they never run in an xdist worker.
+    if os.getenv("PYTEST_XDIST_WORKER"):
+        pytest.skip("load tests run in one process: use pytest -m perf without -n")
     summaries = []
     yield summaries
     if summaries:

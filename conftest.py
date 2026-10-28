@@ -9,42 +9,63 @@ import time
 
 import pytest, requests
 
-import config
+import config as settings   # "config" is also the name pytest gives its own config object in hooks
 from utils.factories import make_user
 
 log = logging.getLogger("api")
 
-BASE_URL = config.env.base_url
-API_BASE_URL = config.env.api_base_url
-API_KEY = config.env.api_key
-ADMIN_API_KEY = config.env.admin_api_key
+BASE_URL = settings.env.base_url
+API_BASE_URL = settings.env.api_base_url
+API_KEY = settings.env.api_key
+ADMIN_API_KEY = settings.env.admin_api_key
 
-@pytest.fixture(scope="session", autouse=True)
-def server():
-    """Start the mock server once before all tests, stop it after.
+# ---------- mock server: started once, also when tests run in parallel ----------
+#
+# With pytest-xdist (pytest -n 4) there is one main pytest process and 4 worker processes that run the tests.
+# A session fixture would run once in EACH worker: 4 servers fighting over port 5050. These hooks run in the main
+# process only, before any worker starts, so all workers share one server.
+#
+#   pytest_configure:    runs once per process when pytest starts (main process, and each worker)
+#   pytest_unconfigure:  runs once per process when pytest exits
+#   config.workerinput:  only exists in a worker, so "not a worker" = the main process (or a normal run)
 
-    scope="session": run once for the whole test run (not once per test)
-    autouse=True:    run automatically, tests don't need to ask for it
-    """
-    if not config.env.start_mock_server:
-        yield
+def is_worker(config) -> bool:
+    return hasattr(config, "workerinput")
+
+
+def pytest_configure(config):
+    if is_worker(config):
+        # Each worker logs to its own file (reports/api-gw0.log, api-gw1.log, ...): if they all wrote to
+        # reports/api.log they would overwrite each other. utils/kpi.py reads all of them.
+        worker = config.workerinput["workerid"]          # "gw0", "gw1", ...
+        config.option.log_file = str(config.rootpath / "reports" / f"api-{worker}.log")
         return
+
+    for old_log in (config.rootpath / "reports").glob("api-gw*.log"):     # from an earlier parallel run
+        old_log.unlink()
+
+    if not settings.env.start_mock_server:
+        return
+    config.mock_server = start_mock_server()
+
+
+def pytest_unconfigure(config):
+    if hasattr(config, "mock_server"):
+        config.mock_server.terminate()                   # after the tests: stop the server
+
+
+def start_mock_server() -> subprocess.Popen:
     process = subprocess.Popen([sys.executable, "-m", "mock_server.app"])
 
     # The server needs a moment to start. Try for up to 5 seconds.
     for _ in range(50):
         try:
             requests.get(BASE_URL)               # any answer (even 404) means it's up
-            break
+            return process
         except requests.ConnectionError:
             time.sleep(0.1)
-    else:
-        process.kill()
-        raise RuntimeError(f"Server did not start at {BASE_URL}")
-
-    yield                                        # <- all the tests run here
-
-    process.terminate()                          # after the tests: stop the server
+    process.kill()
+    raise RuntimeError(f"Server did not start at {BASE_URL}")
 
 
 class Client:

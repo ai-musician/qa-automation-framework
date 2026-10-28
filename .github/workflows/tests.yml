@@ -2,7 +2,7 @@
 #
 # The API and the tests run in Docker containers (docker-compose.yml): the same commands as on a laptop.
 #
-#   functional   API + UI tests (plain `pytest`)                       ~1-2 min
+#   functional   API + UI tests (`pytest -n auto`: in parallel)        ~1-2 min
 #   changes      decides whether the performance tests are needed (see PERF_PATHS below)
 #   performance  load + concurrency tests (`pytest -m perf`)           ~1 min
 #                only starts if functional passed: no point load-testing a broken build

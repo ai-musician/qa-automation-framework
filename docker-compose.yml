@@ -1,6 +1,6 @@
 # The API and the tests in separate containers, like a service and its test runner in a real pipeline.
 #
-#   docker compose run --rm tests                    # API + UI tests
+#   docker compose run --rm tests                    # API + UI tests, in parallel (pytest -n auto)
 #   docker compose run --rm tests pytest -m perf     # performance tests (PERF_LOAD=3 docker compose run ... for 3x)
 #   docker compose up api                            # just the API, at http://localhost:5050
 #   docker compose down                              # stop and remove the containers
