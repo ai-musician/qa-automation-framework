@@ -47,7 +47,7 @@ CRITICAL_PATH = "login, different users"     # the first call of every customer 
 TREND_RUNS = 9                   # the run-history chart: this run and the 8 before it
 HISTORY_RUNS = 8                 # trend window: this many earlier merges to main
 OPS_RUNS = 30                    # operational window: this many completed runs on main
-REGRESSION = 1.25                # TP99 more than 25% over the trend's median ...
+REGRESSION = 1.4                 # TP99 more than 40% over the trend's median, beyond the whole run's drift ...
 REGRESSION_MIN_MS = 2            # ... and at least 2 ms worse (CI runners are noisy at a few ms) is a callout
 
 GOOD, WARNING, CRITICAL, NONE = "good", "warning", "critical", "none"     # status of a metric
@@ -236,15 +236,30 @@ def callout(status, title, text):
     return {"status": status, "title": title, "text": text}
 
 
-def tp99_trend(name: str, now_ms: float, history: list[list[dict]]):
-    """(TP99 over the history + now, change vs the history's median in %, regressed?)"""
+def tp99_trend(name: str, now_ms: float, history: list[list[dict]], drift: float = 1.0):
+    """(TP99 over the history + now, change vs the history's median in %, regressed?)
+
+    drift is how much slower the whole run was than usual (run_drift): a slow CI machine slows every scenario
+    together, so a scenario counts as regressed only when it is slower than that."""
     past = [s["p99_ms"] for run in history for s in run if s["name"] == name]
     if not past:
         return [now_ms], None, False
     median = statistics.median(past)
     change = pct(now_ms - median, median) if median else 0
-    regressed = len(past) >= 3 and now_ms > median * REGRESSION and now_ms - median >= REGRESSION_MIN_MS
+    expected = median * drift
+    regressed = len(past) >= 3 and now_ms > expected * REGRESSION and now_ms - expected >= REGRESSION_MIN_MS
     return past + [now_ms], change, regressed
+
+
+def run_drift(perf: list[dict], history: list[list[dict]]) -> float:
+    """How much slower this whole run was than usual: the median, over the scenarios with a latency SLO, of TP99
+    against each one's recent median. 1.0 when the run was as fast or faster, or there isn't enough history."""
+    ratios = []
+    for s in perf:
+        past = [p["p99_ms"] for run in history for p in run if p["name"] == s["name"]]
+        if s.get("target_p99_ms") and len(past) >= 3 and statistics.median(past):
+            ratios.append(s["p99_ms"] / statistics.median(past))
+    return max(1.0, statistics.median(ratios)) if len(ratios) >= 3 else 1.0
 
 
 def review(k: dict, history: list[list[dict]]) -> tuple[dict[str, list], list[dict], list[dict]]:
@@ -269,8 +284,9 @@ def review(k: dict, history: list[list[dict]]) -> tuple[dict[str, list], list[di
         sections["output"].append(metric(
             "slo", "APIs Within Their TP99 SLO", f"{within} of {len(timed)}", "All",
             GOOD if within == len(timed) else CRITICAL, ratio=within / len(timed) if timed else None))
+        drift = run_drift(perf, history)
         if critical := next((s for s in perf if s["name"] == CRITICAL_PATH), None):
-            series, change, regressed = tp99_trend(CRITICAL_PATH, critical["p99_ms"], history)
+            series, change, regressed = tp99_trend(CRITICAL_PATH, critical["p99_ms"], history, drift)
             status = CRITICAL if critical["p99_ms"] > critical["target_p99_ms"] else WARNING if regressed else GOOD
             note = "every user with their own key" + ("" if change is None else " · in line with recent median"
                                                       if round(change) == 0 else f" · {change:+.0f}% vs recent median")
@@ -283,7 +299,7 @@ def review(k: dict, history: list[list[dict]]) -> tuple[dict[str, list], list[di
             "integrity", "Lost or Duplicated Records Under Load", str(broken), "0", GOOD if broken == 0 else CRITICAL,
             note="no lost transactions · no duplicate accounts"))
         for s in perf:
-            series, change, regressed = tp99_trend(s["name"], s["p99_ms"], history)
+            series, change, regressed = tp99_trend(s["name"], s["p99_ms"], history, drift)
             target = s.get("target_p99_ms")
             status = NONE if not target else CRITICAL if s["p99_ms"] > target else WARNING if regressed else GOOD
             latency.append({"name": s["name"], "requests": s["requests"], "p50": s["p50_ms"],

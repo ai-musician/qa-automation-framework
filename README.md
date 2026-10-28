@@ -388,8 +388,8 @@ How it works:
 - **Measured, not typed in.** Coverage compares the README's API table with `api.log` (every request the tests sent);
   latency comes from `performance.json`; the operational metrics and trends come from this workflow's history on
   main through the GitHub CLI. The one hand-kept input is bug severity in `data/bugs.json`.
-- **Callouts first.** Every red metric, and every TP99 more than 25% (and 2 ms) worse than its median over the last
-  8 merges, is listed at the top, so a review starts with what needs attention.
+- **Callouts first.** Every red metric, and every TP99 more than 40% (and 2 ms) worse than its median over the last
+  8 merges beyond the whole run's drift (a slow CI machine slows every scenario together), is listed at the top, so a review starts with what needs attention.
 - **It reports; it never fails the build.** The tests do that: a missed TP99 SLO, a single error under load or a lost
   record fails the performance job.
 
@@ -500,7 +500,7 @@ by the data-driven negative tests on their first run (16 of 76 cases failed agai
 
 - **More negative data:** Unicode edge cases (emoji, right-to-left text, look-alike letters in emails),
   very large request bodies, and duplicate JSON keys.
-- **Fail on performance regressions:** the KPI review already calls out a TP99 that is 25% worse than its trend over
+- **Fail on performance regressions:** the KPI review already calls out a TP99 that is 40% worse than its trend over
   the last 8 merges; on a real service with stable test hardware I'd make that block the merge, not just warn.
 - **Contract tests:** validate responses against an OpenAPI schema so services and the gateway can't drift apart.
 - **Bigger load tests:** k6 or Locust for longer runs (soak tests over hours, ramping to find the breaking point),

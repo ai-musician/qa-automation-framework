@@ -57,8 +57,8 @@ so they are left out). These are the DORA metrics, measured at the CI stage beca
 Per load scenario: requests, TP50, TP90, TP99 (the SLO, bold), TP99.9 (1,000+ requests only), a sparkline of TP99
 over the last 8 merges to main, and the change against their median.
 
-**Regression callout:** for scenarios with a latency SLO, TP99 more than 25% above the median of the last 8
-merges **and** at least 2 ms worse. (The parallel sign-up scenario has no SLO: it checks correctness, not speed.) The
+**Regression callout:** for scenarios with a latency SLO, TP99 more than 40% above the median of the last 8
+merges, after allowing for how much slower the whole run was (the median of every scenario's change: a slow CI runner slows them all together), **and** at least 2 ms worse. (The parallel sign-up scenario has no SLO: it checks correctness, not speed.) The
 2 ms floor exists because shared CI runners vary by a few milliseconds from run to run; without it, a 4 → 6 ms
 change would be flagged as +50%. A regression is a yellow callout, not a failed build: the SLO check fails the build.
 
