@@ -13,10 +13,13 @@ team's SLOs. Results go to reports/performance.html, .json and .md (the .md is s
 
 PERF_LOAD multiplies the request counts: PERF_LOAD=3 pytest -m perf sends 3x the requests (CI does this on main).
 """
+import json
 import os
 import uuid
+from dataclasses import asdict
 from pathlib import Path
 
+import allure
 import pytest
 import requests
 
@@ -54,6 +57,8 @@ def check(summary, target_p99_ms, perf_results):
     summary.target_p99_ms = target_p99_ms
     summary.passed = summary.error_rate == 0 and summary.p99_ms <= target_p99_ms
     perf_results.append(summary)
+    allure.attach(json.dumps(asdict(summary), indent=2), name=f"{summary.name}: load results",
+                  attachment_type=allure.attachment_type.JSON)
     assert summary.error_rate == 0, f"{summary.errors} of {summary.requests} requests failed, e.g. {summary.sample_errors}"
     assert summary.p99_ms <= target_p99_ms, f"TP99 {summary.p99_ms:.1f} ms is over the {target_p99_ms} ms SLO"
 

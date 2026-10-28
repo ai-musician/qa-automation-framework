@@ -3,14 +3,17 @@ Fixtures: setup code that pytest runs for the tests.
 Tests use a fixture just by naming it as a parameter, e.g. def test_x(client).
 """
 import logging
+import shutil
 import subprocess
 import sys
 import time
 
+import allure
 import pytest, requests
 
 import config as settings   # "config" is also the name pytest gives its own config object in hooks
 from utils.factories import make_user
+from utils.redact import add_secret, redact, redact_headers
 
 log = logging.getLogger("api")
 
@@ -18,6 +21,8 @@ BASE_URL = settings.env.base_url
 API_BASE_URL = settings.env.api_base_url
 API_KEY = settings.env.api_key
 ADMIN_API_KEY = settings.env.admin_api_key
+add_secret(API_KEY)                  # masked in api.log and the reports, wherever they appear (utils/redact.py)
+add_secret(ADMIN_API_KEY)
 
 # ---------- mock server: started once, also when tests run in parallel ----------
 #
@@ -33,6 +38,7 @@ def is_worker(config) -> bool:
     return hasattr(config, "workerinput")
 
 
+@pytest.hookimpl(tryfirst=True)      # before allure-pytest creates its results folder
 def pytest_configure(config):
     if is_worker(config):
         # Each worker logs to its own file (reports/api-gw0.log, api-gw1.log, ...): if they all wrote to
@@ -43,6 +49,10 @@ def pytest_configure(config):
 
     for old_log in (config.rootpath / "reports").glob("api-gw*.log"):     # from an earlier parallel run
         old_log.unlink()
+    # Allure results from the last run, cleared here once. allure-pytest's own --clean-alluredir runs in every
+    # worker, and a worker starting late can delete the folder another worker just created.
+    if config.option.allure_report_dir:
+        shutil.rmtree(config.rootpath / config.option.allure_report_dir, ignore_errors=True)
 
     if not settings.env.start_mock_server:
         return
@@ -68,6 +78,25 @@ def start_mock_server() -> subprocess.Popen:
     raise RuntimeError(f"Server did not start at {BASE_URL}")
 
 
+# ---------- Allure labels ----------
+LAYERS = {"api": "API", "ui": "UI", "perf": "Performance"}      # pytest marker -> Allure epic
+
+
+@pytest.fixture(autouse=True)
+def allure_labels(request):
+    """Groups the Allure report by layer (API / UI / Performance) and by test module (users, transactions...)."""
+    epic = next((name for marker, name in LAYERS.items() if request.node.get_closest_marker(marker)), "Other")
+    allure.dynamic.epic(epic)
+    module = request.node.module.__name__.rsplit(".", 1)[-1]       # tests.api.test_users -> test_users
+    allure.dynamic.feature(module.removeprefix("test_").removeprefix("ui_").replace("_", " "))
+
+    # Allure records each parametrized test's inputs, and negative cases carry API keys: mask them too
+    params = request.node.callspec.params if hasattr(request.node, "callspec") else {}
+    for name, value in params.items():
+        if (masked := redact(repr(value))) != repr(value):
+            allure.dynamic.parameter(name, masked)
+
+
 class Client:
     """Sends requests to BASE_URL, so tests only write the path ("/api/users")."""
 
@@ -75,14 +104,23 @@ class Client:
         self.session = requests.Session()
 
     def _log(self, res):
+        """Every request and response goes to api.log and, as an attachment, to the test in the Allure report,
+        with API keys and tokens masked (utils/redact.py): both end up in CI artifacts and on GitHub Pages."""
+        request_body, response_body = redact(res.request.body), redact(res.text[:500])   # [:500]: huge bodies
         log.info("%s %s -> %s\n  request:  %s\n  response: %s",
-            res.request.method, res.url, res.status_code,
-            res.request.body, res.text[:500])        # [:500] keeps huge bodies short
+            res.request.method, res.url, res.status_code, request_body, response_body)
+        path = res.request.path_url
+        allure.attach(f"{res.request.method} {res.url} -> {res.status_code}\n\n"
+                      f"Request headers:\n{redact_headers(res.request.headers)}\n\n"
+                      f"Request body:\n{request_body}\n\nResponse body:\n{response_body}",
+                      name=f"{res.request.method} {path} -> {res.status_code}",
+                      attachment_type=allure.attachment_type.TEXT)
         return res
 
 
     def login(self, api_key):
         token = self.post("/api/auth/token", {"apiKey": api_key}).json()["token"]
+        add_secret(token)
         self.session.headers["Authorization"] = f"Bearer {token}"   # sent on every request from now on
         return self
 

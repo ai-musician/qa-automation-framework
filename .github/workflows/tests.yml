@@ -11,6 +11,8 @@
 #                pull request: normal load (PERF_LOAD=1), a quick check before merging
 #                merge to main: 3x the load (PERF_LOAD=3), on the code that will be deployed
 #   kpi          QA KPIs from the two jobs' reports (utils/kpi.py), always runs; reports, never fails the build
+#   allure       merges to main (and manual runs): builds the Allure report from both test jobs, with history,
+#                and publishes it to GitHub Pages; refuses to publish if a credential made it into the report
 #
 # Reports are attached to each run under "Artifacts"; performance results and KPIs also show on the run's summary page.
 
@@ -162,3 +164,100 @@ jobs:
           name: kpi-report
           path: reports/kpi/
           retention-days: 90
+
+  allure:
+    name: Allure report (GitHub Pages)
+    needs: [functional, performance]
+    # main only: the report is public. always(): a red run is exactly the one worth looking at
+    if: always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.functional.result != 'cancelled'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write                # publish to GitHub Pages
+      id-token: write             # proves to Pages that this workflow is the publisher
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    concurrency:
+      group: pages                # one publish at a time; never cancel one halfway
+      cancel-in-progress: false
+    env:
+      ALLURE_VERSION: "2.46.1"
+      SITE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+    steps:
+      - name: Download functional results
+        uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: functional-reports
+          path: reports/functional
+
+      - name: Download performance results
+        uses: actions/download-artifact@v8
+        continue-on-error: true   # missing when performance tests were skipped
+        with:
+          name: performance-reports
+          path: reports/performance
+
+      - name: Collect results, history and run details
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          mkdir -p results/history
+          cp reports/functional/allure-results/* results/ 2>/dev/null || true
+          cp reports/performance/allure-results/* results/ 2>/dev/null || true
+
+          # history from the report that's live now: this is what fills the trend charts run after run
+          for f in history.json history-trend.json duration-trend.json categories-trend.json retry-trend.json; do
+            curl -sfL "$SITE/history/$f" -o "results/history/$f" || echo "no $f yet (first report)"
+          done
+
+          # "Executors" widget: links the report back to this CI run
+          cat > results/executor.json <<EOF
+          {"name": "GitHub Actions", "type": "github", "buildOrder": ${{ github.run_number }},
+           "buildName": "run #${{ github.run_number }}", "buildUrl": "$RUN_URL", "reportUrl": "$SITE"}
+          EOF
+
+          cat > results/environment.properties <<EOF
+          Commit=${GITHUB_SHA::7}
+          API=mock fintech API in Docker
+          Functional.tests=pytest -n auto (parallel)
+          Performance.load=PERF_LOAD=3, one process
+          EOF
+
+          # failures sorted the way a triage would: the product is wrong, or the test is
+          cat > results/categories.json <<'EOF'
+          [{"name": "Product defects", "matchedStatuses": ["failed"]},
+           {"name": "Test defects", "matchedStatuses": ["broken"]}]
+          EOF
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"        # the Allure command-line tool runs on Java
+
+      - name: Build the report
+        run: |
+          curl -sSfL -o allure.tgz \
+            "https://github.com/allure-framework/allure2/releases/download/$ALLURE_VERSION/allure-$ALLURE_VERSION.tgz"
+          tar xzf allure.tgz
+          "allure-$ALLURE_VERSION/bin/allure" generate results -o site --clean
+
+      - name: Refuse to publish credentials
+        run: |
+          # the report is public: if a key or token ever got past utils/redact.py, stop here
+          if grep -rlF -e user-api-key -e admin-api-key site; then
+            echo "::error::A credential was found in the Allure report; not publishing."
+            exit 1
+          fi
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - name: Publish to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v5
+
+      - name: Link the report on the run page
+        run: echo "### [Allure report](${{ steps.deploy.outputs.page_url }})" >> "$GITHUB_STEP_SUMMARY"

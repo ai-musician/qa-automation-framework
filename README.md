@@ -99,6 +99,7 @@ utils/
   load.py             Load generator: parallel requests, latency percentiles, HTML/JSON report
   assertions.py       Custom assertions with readable failure messages
   kpi.py              QA metrics review: output / input / operational metrics with goals and trends
+  redact.py           Masks API keys and tokens before anything is logged or attached to a report
 tests/
   api/                API tests: auth, users, transactions
     test_negative_data.py   Data-driven negative tests, one run per case in data/negative/
@@ -286,10 +287,24 @@ Every run writes to `reports/`:
 |---|---|
 | `report.html` | people: results, durations, error details and captured API logs per test |
 | `junit.xml` | CI tools (Jenkins, GitHub Actions, GitLab) |
-| `api.log` | every API request and response (method, URL, status, bodies) |
+| `api.log` | every API request and response (method, URL, status, bodies), **credentials masked** (`api-gw*.log` per worker with `-n`) |
+| `allure-results/` | raw results for the **Allure report**: each test with its API calls attached, grouped by layer and module |
 | `artifacts/<test>/test-failed-1.png` | screenshot of the browser at the moment a UI test failed |
 | `performance.html` / `performance.json` | after `pytest -m perf`: req/s, TP50/TP90/TP99/TP99.9, errors and pass/fail per scenario |
 | `kpi.md` / `kpi.json` | after `python -m utils.kpi`: the QA metrics review (see below) |
+
+**Allure report.** Every merge to main publishes it to GitHub Pages, so anyone can open it without downloading
+anything: **https://ai-musician.github.io/qa-automation-framework/**. It shows each test's API calls (request and
+response), groups tests by layer (API / UI / Performance) and module, sorts failures into product defects and test
+defects, links back to the CI run, and keeps history, so the trend charts and each test's past results build up
+run after run. Locally: `brew install allure`, then `allure serve reports/allure-results`.
+
+**Credentials are masked everywhere** (`utils/redact.py`): `api.log`, the HTML report and the Allure report are CI
+artifacts, the Allure report is public, and against staging the keys are real secrets. Two layers: known values
+(the configured API keys and every token the tests receive, wherever they appear) and secret-looking fields
+(`apiKey`, `api_key`, `token`, `password`...), including in Allure's record of test parameters. Masking works on the
+text, so the log still shows exactly what was sent, broken JSON included. `tests/api/test_secrets_not_logged.py`
+covers each shape a key arrives in, and CI refuses to publish the Allure report if a key is found in it anyway.
 
 ---
 
@@ -373,7 +388,10 @@ by its service name (`http://api:5050`), as they would reach a deployed service.
 | **API + UI tests** | `docker compose run --rm tests` | ✅ | ✅ |
 | **Performance tests** | `docker compose run --rm tests pytest -m perf`, only if the first job passed **and** a performance-relevant file changed | normal load (`PERF_LOAD=1`): a quick check before merging | **3× load** (`PERF_LOAD=3`), on the code that gets deployed |
 | **QA KPIs** | `python -m utils.kpi` on the two jobs' reports, always | ✅ | ✅ |
+| **Allure report** | builds the report from both jobs' results, with history, and publishes it to GitHub Pages | - | ✅ |
 
+- **Allure report** runs on merges to main only (the report is public), also when tests failed, since a red run is
+  the one worth looking at. It refuses to publish if a credential made it into the report.
 - A third job, **QA KPIs**, always runs after the other two (also when they failed or performance was skipped)
   and adds the [QA metrics review](#qa-kpis) to the summary page. It reports; it never fails the build.
 - Reports are attached to every run under **Artifacts** (HTML report, JUnit XML, API log, failure screenshots,
