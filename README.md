@@ -100,11 +100,12 @@ docker compose run --rm --build --no-deps \
 ### Run on Kubernetes
 
 The same two images, deployed to a local Kubernetes cluster ([kind](https://kind.sigs.k8s.io/): Kubernetes in
-Docker). CI runs this on every pull request and merge (job "Tests on Kubernetes").
+Docker). CI runs this on every pull request and merge (job "Tests on Kubernetes"), including the
+[chaos tests](#chaos-testing-losing-an-inference-pod-under-load).
 
 ```bash
 brew install kind kubectl          # once; also needs Docker running
-scripts/k8s_test.sh                # cluster, images, Secret, API, tests: exits non-zero if any test fails
+scripts/k8s_test.sh                # cluster, images, Secret, API, tests, chaos: non-zero if any test fails
 kind delete cluster --name qa      # remove the cluster
 ```
 
@@ -112,7 +113,9 @@ kind delete cluster --name qa      # remove the cluster
 |---|---|
 | `k8s/api.yaml` | **Deployment** `api`: readiness and liveness probes, CPU/memory requests and limits, runs as non-root with a read-only filesystem. **Service** `api`: the tests reach it at `http://api:5050`, as in Docker Compose |
 | `k8s/tests-job.yaml` | **Job** `tests`: an init container waits until the API answers, then `pytest -n auto` runs once (`backoffLimit: 0`: a failed run is a result, not something to retry); `/dev/shm` enlarged for Chromium |
-| `scripts/k8s_test.sh` | creates the cluster, builds and loads the images, stores new API keys in the **Secret** `api-keys` (read by both the API and the tests), deploys, runs the Job, prints its output |
+| `k8s/inference.yaml` | **Deployment** `inference`: the same image as **two replicas**, with graceful shutdown (`preStop` pause, then `SIGTERM`) and `FAULT_INJECTION=on` for the chaos tests. **Service** `inference` |
+| `k8s/chaos-job.yaml` | **Job** `chaos`: runs `tests/chaos`, with a **ServiceAccount**, **Role** and **RoleBinding** that allow listing and deleting pods, and only in this namespace |
+| `scripts/k8s_test.sh` | creates the cluster, builds and loads the images, stores new API keys in the **Secret** `api-keys` (read by the API, the inference pods and the tests), deploys, runs both Jobs, prints their output |
 
 One API replica: the mock keeps its data in memory, so a second pod would hold different users. A real service
 would scale out behind a shared database.
@@ -125,6 +128,39 @@ kubectl --context kind-qa -n qa logs -f job/tests          # the test output, li
 kubectl --context kind-qa -n qa describe deployment api    # probes, limits, events
 kubectl --context kind-qa -n qa port-forward svc/api 5050  # the API at http://localhost:5050
 ```
+
+### Chaos testing: losing an inference pod under load
+
+`tests/chaos` runs inside the cluster. Eight users stream chat replies from the two `inference` replicas without a
+pause; partway through, one replica goes away. The test measures what the users saw:
+
+| Failure | How | Must hold |
+|---|---|---|
+| **Graceful**: a rolling update or node drain | the pod is deleted: Kubernetes stops routing to it, `preStop` lets its open streams finish, then `SIGTERM` | **not a single failed reply** |
+| **Crash**: the process dies | `POST /debug/crash` ends the server at once (that route only exists with `FAULT_INJECTION=on`, admin only); Kubernetes restarts the container | **no failure once both replicas are ready again**, never 2 s without a successful reply, availability ≥ 85% |
+
+Both must be back to two ready replicas within 60 s. Typical results (kind on a laptop, six runs):
+
+| Failure | Replies | Failed | Availability | Longest gap with no successful reply | Back to 2 replicas |
+|---|---:|---:|---:|---:|---:|
+| Graceful | ~490 | **0** | 100% | 0.2 s | 1.3–1.6 s |
+| Crash | ~540 | 29–46 | 91.6–94.6% | 0.2–0.3 s | 1.8 s |
+
+What it shows:
+- **Graceful shutdown works only because of `preStop`.** Kubernetes removes a deleted pod from the Service and
+  signals the container at the same moment. Run once without the pause, the graceful stop failed 5 of 485 replies
+  (streams cut mid-reply); with it, 0.
+- **A crash cuts the streams in progress, but the service stays up.** The failures are the replies being streamed
+  at that moment, plus new requests that reach the dead pod in the second before its readiness probe fails. The
+  other replica keeps answering throughout. A client that retries a cut stream would hide most of them; the test
+  measures without retries, as a user without one would experience it.
+- Inference requests authenticate with the API key itself (OpenAI-style), so the replicas share no login
+  sessions: any pod can answer any request.
+- As the container's first process, Python ignores `SIGTERM` by default; the server handles it, so a stopped pod
+  exits at once instead of waiting out its grace period.
+
+The test talks to the Kubernetes API with plain HTTPS and the pod's service-account token, so the tests image
+needs no Kubernetes client.
 
 ---
 

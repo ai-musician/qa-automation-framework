@@ -4,6 +4,8 @@ import json
 
 import pytest
 from utils.assertions import assert_api_error, assert_expected_error, assert_status
+from utils.factories import SENDER_ID
+import config
 
 pytestmark = pytest.mark.api
 
@@ -48,6 +50,33 @@ def test_streamed_reply_matches_the_whole_reply(user_api):
     last = chunks[-2]
     assert last["choices"][0]["finish_reason"] == "length"
     assert last["usage"]["completion_tokens"] == 5
+
+
+def test_chat_accepts_the_api_key_as_bearer_token(client):
+    """OpenAI-style clients send the API key itself. Then an inference pod needs no login session, so any replica can
+    answer any request (the chaos test runs two and stops one)."""
+    res = client.post(CHAT, chat_request(), headers={"Authorization": f"Bearer {config.env.api_key}"})
+    assert_status(res, 200)
+
+
+@pytest.mark.negative
+def test_api_key_as_bearer_token_only_works_for_inference(client):
+    """The /api routes still need a token from POST /api/auth/token."""
+    res = client.get(f"/api/users/{SENDER_ID}", headers={"Authorization": f"Bearer {config.env.api_key}"})
+    assert_api_error(res, "INVALID_TOKEN", 401)
+
+
+@pytest.mark.negative
+def test_chat_with_unknown_bearer_returns_401(client):
+    res = client.post(CHAT, chat_request(), headers={"Authorization": "Bearer not-a-key-or-token"})
+    assert_api_error(res, "INVALID_TOKEN", 401)
+
+
+@pytest.mark.negative
+def test_crash_endpoint_does_not_exist_without_fault_injection(client):
+    """POST /debug/crash, for the chaos tests, only exists where FAULT_INJECTION=on (k8s/inference.yaml)."""
+    res = client.post("/debug/crash", headers={"Authorization": f"Bearer {config.env.admin_api_key}"})
+    assert_status(res, 404)
 
 
 @pytest.mark.negative

@@ -1,0 +1,68 @@
+# The mock inference service: the same `api` image, as two replicas behind the Service `inference`, so one can be
+# stopped while the other keeps answering (tests/chaos). Inference requests authenticate with the API key itself
+# (OpenAI-style), so the pods share no login sessions and any replica can serve any request.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inference
+  namespace: qa
+  labels: {app: inference}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: inference}
+  template:
+    metadata:
+      labels: {app: inference}
+    spec:
+      # Graceful shutdown: when a pod is deleted, Kubernetes stops sending it new requests while preStop pauses for
+      # 5 s, so the replies it's still streaming can finish; then SIGTERM stops the server.
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: inference
+          image: qa-api:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5050
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "5050"
+            - name: FAULT_INJECTION       # adds POST /debug/crash (admin only), so the chaos tests can crash a pod
+              value: "on"
+          envFrom:
+            - secretRef: {name: api-keys}
+          lifecycle:
+            preStop:
+              exec: {command: [sleep, "5"]}
+          readinessProbe:
+            httpGet: {path: /, port: 5050}
+            periodSeconds: 1
+            failureThreshold: 2
+          livenessProbe:
+            httpGet: {path: /, port: 5050}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inference
+  namespace: qa
+spec:
+  selector: {app: inference}
+  ports:
+    - port: 5050
+      targetPort: 5050
