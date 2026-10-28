@@ -114,6 +114,8 @@ data/
   bugs.json           Bugs found before release, with severity (feeds the KPI report)
   *.json              Seed data for the scripts
 scripts/              Load seed data into a running server by hand
+allure/
+  custom-logo.css     This project's mark in the Allure report, instead of Allure's logo
 infra/
   aws-setup.yml       One-time AWS setup: budget alert, GitHub OIDC login, least-privilege role for CI
   qa-env.yml          The per-run QA environment: one instance running the api image, open to the CI runner only
