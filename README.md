@@ -305,6 +305,9 @@ artifacts, the Allure report is public, and against staging the keys are real se
 (`apiKey`, `api_key`, `token`, `password`...), including in Allure's record of test parameters. Masking works on the
 text, so the log still shows exactly what was sent, broken JSON included. `tests/api/test_secrets_not_logged.py`
 covers each shape a key arrives in, and CI refuses to publish the Allure report if a key is found in it anyway.
+Masked test parameters are excluded from Allure's test identity (the pytest case id is used instead): otherwise
+cases whose inputs mask to the same text would be merged as "retries". CI also refuses to publish a report that
+shows a different number of tests than JUnit says ran.
 
 ---
 

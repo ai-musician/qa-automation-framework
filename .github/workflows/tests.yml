@@ -243,6 +243,20 @@ jobs:
           tar xzf allure.tgz
           "allure-$ALLURE_VERSION/bin/allure" generate results -o site --clean
 
+      - name: Check the report shows every test that ran
+        run: |
+          # Allure merges results it thinks are the same test (as retries); the report must match JUnit exactly
+          python3 - <<'EOF'
+          import glob, json, sys, xml.etree.ElementTree as ET
+          ran = sum(int(s.get("tests", 0)) for f in glob.glob("reports/*/junit.xml")
+                    for s in ET.parse(f).getroot().iter("testsuite"))
+          shown = json.load(open("site/widgets/summary.json"))["statistic"]["total"]
+          print(f"JUnit: {ran} tests ran; Allure report: {shown}")
+          if ran != shown:
+              print(f"::error::The Allure report shows {shown} tests but {ran} ran; not publishing.")
+              sys.exit(1)
+          EOF
+
       - name: Refuse to publish credentials
         run: |
           # the report is public: if a key or token ever got past utils/redact.py, stop here

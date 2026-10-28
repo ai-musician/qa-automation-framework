@@ -90,11 +90,17 @@ def allure_labels(request):
     module = request.node.module.__name__.rsplit(".", 1)[-1]       # tests.api.test_users -> test_users
     allure.dynamic.feature(module.removeprefix("test_").removeprefix("ui_").replace("_", " "))
 
-    # Allure records each parametrized test's inputs, and negative cases carry API keys: mask them too
+    # Allure records each parametrized test's inputs, and negative cases carry API keys: mask them too.
+    # Allure also identifies a test across runs by its parameter values, and masked values can be identical
+    # ([api-key] and [list] both become {"apiKey": "***"}), which would merge two cases into one. So the
+    # masked value is shown but excluded from that identity, and the pytest case id identifies the test instead.
     params = request.node.callspec.params if hasattr(request.node, "callspec") else {}
-    for name, value in params.items():
-        if (masked := redact(repr(value))) != repr(value):
-            allure.dynamic.parameter(name, masked)
+    shown = {name: value if isinstance(value, str) else repr(value) for name, value in params.items()}
+    masked = {name: m for name, text in shown.items() if (m := redact(text)) != text}
+    if masked:
+        allure.dynamic.parameter("pytest id", request.node.callspec.id)      # "case" is taken by some tests
+        for name, value in masked.items():
+            allure.dynamic.parameter(name, value, excluded=True)
 
 
 class Client:
