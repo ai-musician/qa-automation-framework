@@ -3,7 +3,5 @@ __pycache__/
 .pytest_cache/
 reports/
 .env
-.env.local
-.env.dev
-.env.staging
+.env.*
 .DS_Store

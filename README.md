@@ -89,6 +89,14 @@ docker compose run --rm --build --no-deps \
 - The tests clean up the data they create, but on a shared QA server use dedicated test accounts, and run
   `pytest -m perf` only when the team agrees: 3× load on a shared server affects everyone testing on it.
 
+**Where the API keys are stored:** never in the repository or the image.
+
+| Where the tests run | Where the keys come from |
+|---|---|
+| Your laptop | Your shell (`export API_KEY=...`). Without Docker, also a git-ignored `.env.qa`, loaded with `ENV_NAME=qa pytest` |
+| CI against a QA server | GitHub Actions secrets, masked in the logs |
+| [AWS QA environment](#aws-qa-environment) | Generated fresh for every run, masked in the logs, and gone when the environment is deleted |
+
 ---
 
 ## Project layout
