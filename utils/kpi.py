@@ -537,13 +537,6 @@ svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor;
 .nav .sep { height: 1px; background: var(--line); margin: 8px 12px; }
 .side .spacer { flex: 1; }
 .side-foot { border-top: 1px solid var(--line); padding-top: 16px; display: flex; flex-direction: column; gap: 14px; }
-.health { padding: 12px; border-radius: 8px; background: var(--accent-wash); border: 1px solid var(--accent-line);
-          font-size: 12px; color: var(--ink-2); }
-.health strong { display: flex; align-items: center; gap: 8px; color: var(--accent-text); font-size: 12px; font-weight: 600;
-                 margin-bottom: 4px; }
-.health .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
-.health.bad { background: var(--bad-wash); border-color: var(--bad-line); }
-.health.bad strong { color: var(--critical); } .health.bad .dot { background: var(--critical); }
 .theme { display: flex; align-items: center; justify-content: space-between; padding: 0 4px; font-size: 12px;
          font-weight: 500; color: var(--muted); }
 .switch { all: unset; cursor: pointer; width: 36px; height: 20px; border-radius: 999px; background: var(--line);
@@ -811,6 +804,19 @@ for (const el of document.querySelectorAll('[data-tip]')) {
   el.addEventListener('blur', () => tip.style.opacity = 0);
 }
 
+// sidebar: highlight the link of the section in view (the last one whose top has scrolled past the top third)
+const spyLinks = [...document.querySelectorAll('.nav a[data-spy]')];
+const spyTargets = spyLinks.map(a => document.querySelector(a.getAttribute('href')));
+function spy() {
+  let current = 0;
+  spyTargets.forEach((t, i) => { if (t && t.getBoundingClientRect().top <= innerHeight / 3) current = i; });
+  if (innerHeight + scrollY >= document.documentElement.scrollHeight - 2) current = spyLinks.length - 1;   // page bottom
+  spyLinks.forEach((a, i) => a.classList.toggle('on', i === current));
+}
+addEventListener('scroll', spy, { passive: true });
+addEventListener('resize', spy);
+spy();
+
 // the metrics table: tabs, search and status filter work together; a row opens to show where its number comes from
 let group = 'all';
 const search = document.getElementById('q'), statusSel = document.getElementById('status');
@@ -950,7 +956,6 @@ def to_html(k: dict, sections: dict, latency: list, callouts: list, history: lis
     skipped = sum(s["skipped"] for s in suite_list)
     passed = total - failed - skipped
     green_suites = sum(not s["failed"] for s in suite_list)
-    healthy = failed == 0 and on_goal == len(scored) and not (ops or {}).get("stillBroken")
     run_label = f"run #{ctx['run']}" if ctx["run"] else "this local run"
     login = next((s for s in latency if s["name"] == CRITICAL_PATH), None)
     short = {"api": "API", "ui": "UI", "perf": "performance"}
@@ -959,9 +964,6 @@ def to_html(k: dict, sections: dict, latency: list, callouts: list, history: lis
     out = []
 
     # ---- sidebar ----
-    health_text = (f"{run_label.capitalize()}: {total} tests, zero failures across {len(suite_list)} suites."
-                   if healthy else f"{run_label.capitalize()}: {failed} failed tests, "
-                                   f"{len(scored) - on_goal} of {len(scored)} goals not met.")
     out.append(f'''<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>Quality Overview · QA Automation</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -971,12 +973,12 @@ def to_html(k: dict, sections: dict, latency: list, callouts: list, history: lis
   <div class="brand"><span class="mark"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
     <div><strong>Quality</strong><small>QA Automation</small></div></div>
   <nav class="nav">
-    <a class="on" href="#overview">{icon("grid")}Overview</a>
-    <a href="#suites">{icon("suitcase")}Test Suites<span class="count">{len(suite_list)}</span></a>
-    <a href="#history">{icon("history")}Run History</a>
-    <a href="#metrics">{icon("chart")}Metrics<span class="count">{len(rows)}</span></a>
-    <a href="#latency">{icon("gauge")}API Latency</a>
-    <a href="#environment">{icon("server")}Environment</a>
+    <a class="on" href="#overview" data-spy>{icon("grid")}Overview</a>
+    <a href="#history" data-spy>{icon("history")}Runs &amp; Suites</a>
+    <a href="#signals" data-spy>{icon("pulse")}Key Signals</a>
+    <a href="#metrics" data-spy>{icon("chart")}Metrics<span class="count">{len(rows)}</span></a>
+    <a href="#latency" data-spy>{icon("gauge")}API Latency</a>
+    <a href="#environment" data-spy>{icon("server")}Environment</a>
     <div class="sep"></div>
     <a href="{esc(url["allure"])}">{icon("report")}Allure Report<span class="ext">↗</span></a>
     <a href="{esc(url["definitions"])}">{icon("book")}Definitions<span class="ext">↗</span></a>
@@ -984,7 +986,6 @@ def to_html(k: dict, sections: dict, latency: list, callouts: list, history: lis
   </nav>
   <div class="spacer"></div>
   <div class="side-foot">
-    <div class="health{"" if healthy else " bad"}"><strong><span class="dot"></span>{"All Checks Passed" if healthy else "Needs Attention"}</strong>{esc(health_text)}</div>
     <div class="theme"><span>Dark Mode</span><button class="switch" id="theme" role="switch" aria-checked="false" aria-label="Dark mode"></button></div>
   </div>
 </aside>
@@ -1071,7 +1072,7 @@ def to_html(k: dict, sections: dict, latency: list, callouts: list, history: lis
 </section></div>''')
 
     # ---- key signals ----
-    out.append('<div class="section-label"><h2>Key Signals</h2><span class="meta">Compared with your goals</span></div>'
+    out.append('<div class="section-label" id="signals"><h2>Key Signals</h2><span class="meta">Compared with your goals</span></div>'
                '<section class="signals" aria-label="Key signals">')
 
     def signal(title, ico, big, unit, sub, m):
