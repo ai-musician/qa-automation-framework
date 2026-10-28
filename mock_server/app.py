@@ -11,6 +11,7 @@ The fake fintech API (plus a tiny web UI) that the tests run against.
     POST   /api/transactions            create a transaction     -> 201 / 400 / 403 / 404
     GET    /api/transactions/<userId>   a user's transactions    -> 200 / 403 / 404
     POST   /v1/chat/completions         OpenAI-compatible chat, streamed or not -> 200 / 400 / 401 (mock inference)
+    POST   /debug/crash                 end the process, as a crash would (admin; only with FAULT_INJECTION=on)
     GET    /ui                          mock frontend (registration + transactions)
 
 Data lives in Python dicts (stand-ins for MongoDB / Redis), so it disappears when the server stops.
@@ -24,6 +25,8 @@ import json
 import math
 import os
 import re
+import signal
+import sys
 import threading
 import time
 import uuid
@@ -97,6 +100,21 @@ def request_auth(fn):
         if session is None:
             return fail(401, "INVALID_TOKEN", "Token is invalid or expired")
         g.role, g.user_id = session["role"], session["userId"]
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+def inference_auth(fn):
+    """Like request_auth, but also takes an API key itself as the bearer token, the way OpenAI-style clients send it.
+    Then an inference pod needs no session from a login, so any replica can answer any request."""
+    with_session = request_auth(fn)
+
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        caller = API_KEYS.get(request.headers.get("Authorization", "").removeprefix("Bearer "))
+        if caller is None:
+            return with_session(*args, **kwargs)
+        g.role, g.user_id = caller["role"], caller["userId"]
         return fn(*args, **kwargs)
     return wrapper
 
@@ -338,7 +356,7 @@ def validate_chat(body):
 
 
 @app.post("/v1/chat/completions")
-@request_auth
+@inference_auth
 def chat_completions():
     body = json_object()
     if body is None:
@@ -381,6 +399,18 @@ def chat_completions():
     return Response(stream_with_context(events()), mimetype="text/event-stream", headers={"Cache-Control": "no-cache"})
 
 
+# ---------- fault injection, for the chaos tests ----------
+# Only exists when FAULT_INJECTION=on, which only the chaos tests' inference Deployment sets (k8s/inference.yaml).
+if os.getenv("FAULT_INJECTION") == "on":
+    @app.post("/debug/crash")
+    @inference_auth
+    @admin_only
+    def crash():
+        """Ends the process at once, as a crash would: no cleanup, every open connection cut."""
+        threading.Timer(0.05, os._exit, args=(1,)).start()        # just after this reply is sent
+        return jsonify({"crashing": True}), 202
+
+
 # ---------- mock frontend ----------
 @app.get("/ui")
 def ui():
@@ -392,5 +422,8 @@ def home():
     return jsonify({"status": "ok"})
 
 if __name__ == "__main__":
+    # docker stop and Kubernetes ask a container to stop with SIGTERM. As a container's first process, Python would
+    # ignore it and be killed only when the grace period runs out, so exit straight away instead.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     # HOST=0.0.0.0 in Docker, so other containers can reach it; the default only accepts this machine
     app.run(host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", "5050")))

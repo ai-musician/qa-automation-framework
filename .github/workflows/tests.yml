@@ -11,7 +11,8 @@
 #                pull request: normal load (PERF_LOAD=1), a quick check before merging
 #                merge to main: 3x the load (PERF_LOAD=3), on the code that will be deployed
 #   kubernetes   deploys the API to a throwaway Kubernetes cluster (kind) and runs the API + UI tests there as a
-#                Job: scripts/k8s_test.sh, the same script as on a laptop (see README: Run on Kubernetes)  ~3 min
+#                Job, then stops an inference pod under load (tests/chaos): scripts/k8s_test.sh, the same script
+#                as on a laptop (see README: Run on Kubernetes)                       ~4 min
 #   kpi          QA KPIs from the two jobs' reports (utils/kpi.py), always runs; reports, never fails the build
 #   aws-qa       merges to main (and manual runs): creates a QA environment on AWS from infra/qa-env.yml, runs the
 #                API + UI tests against it, deletes it, and checks nothing was left (see README: AWS QA environment)
