@@ -49,4 +49,5 @@
 [data-theme="dark"] .qa-empty__cta { background: #10b981; color: #022c22 !important; }
 [data-theme="dark"] .qa-empty__cta:hover { background: #34d399; }
 /* with zero failures there is nothing to sort, filter or search: hide those controls */
-.qa-categories-clear .tree__ctrl, .qa-categories-clear .pane__search, .qa-categories-clear .pane__controls { display: none; }
+.qa-categories-clear .tree__ctrl, .qa-categories-clear .pane__search,
+.qa-categories-clear .pane__controls { display: none !important; }   /* Allure's own rule for the title icons wins otherwise */
