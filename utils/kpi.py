@@ -541,14 +541,15 @@ h2 { font-size: 18px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
 .callout.warning svg.i { color: var(--warning); } .callout.critical svg.i { color: var(--critical); }
 
 .signals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
-.signal { padding: 20px 22px 16px; display: flex; flex-direction: column; min-height: 196px; }
-.signal .top { display: flex; justify-content: space-between; color: var(--ink-2); font-weight: 500; }
+.signal { padding: 24px; display: flex; flex-direction: column; min-height: 200px; }
+.signal .top { display: flex; justify-content: space-between; align-items: center; height: 24px; color: var(--ink-2);
+               font-weight: 500; }
 .signal .top svg.i { color: var(--muted); }
-.big { font-size: 44px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; margin-top: 14px; }
+.big { font-size: 44px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; margin-top: 16px; }
 .big small { font-size: 0.5em; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: 2px; }
 .signal .sub { color: var(--ink-2); font-size: 14px; margin-top: 4px; display: flex; align-items: center; gap: 4px; }
 .signal .sub svg.i { width: 15px; height: 15px; }
-.signal .foot { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line-2); display: flex;
+.signal .foot { margin-top: auto; padding-top: 16px; border-top: 1px solid var(--line-2); display: flex;
                 justify-content: space-between; align-items: center; font-size: 13px; color: var(--muted); }
 .status { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; white-space: nowrap; }
 .status svg.i { width: 16px; height: 16px; }
@@ -784,14 +785,16 @@ CSS += """
 .runchip { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid var(--line);
            border-radius: 9px; font: 500 13.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); }
 .runchip svg.i { width: 16px; height: 16px; }
-.hero { display: flex; justify-content: space-between; align-items: flex-end; gap: 18px 28px; flex-wrap: wrap;
-        margin-bottom: 26px; }
-.kicker { font-size: 12.5px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); }
-h1 { font-size: 44px; line-height: 1.1; font-weight: 750; letter-spacing: -0.035em; margin: 10px 0 12px; }
-.when { color: var(--ink-2); font-size: 15px; display: flex; gap: 10px; flex-wrap: wrap; }
-.when .sep { color: var(--muted); }
-.when code { font: 500 14px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); }
-.actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.hero { display: flex; justify-content: space-between; align-items: center; gap: 16px 28px; flex-wrap: wrap;
+        margin-bottom: 24px; }
+h1 { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 38px; line-height: 1.15;
+     font-weight: 700; letter-spacing: -0.02em; margin: 0; }
+.actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.metapill { display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 999px;
+            background: var(--sunk); border: 1px solid var(--line); color: var(--ink-2); font-size: 13.5px; white-space: nowrap; }
+.metapill svg.i { width: 15px; height: 15px; color: var(--muted); }
+.metapill code { font: 500 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); }
+.metapill .sep { color: var(--muted); }
 .btn { display: inline-flex; align-items: center; gap: 9px; padding: 11px 18px; border-radius: 11px; font-weight: 600;
        border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
 .btn:hover { background: var(--sunk); }
@@ -813,9 +816,9 @@ h1 { font-size: 44px; line-height: 1.1; font-weight: 750; letter-spacing: -0.035
 .banner.bad .state { color: var(--critical); }
 .run-tiles .signal:first-child { background: var(--accent-wash); border-color: var(--banner-line); }
 .run-tiles .signal:first-child .big { color: var(--accent-text); }
-.mini { height: 4px; border-radius: 2px; background: var(--track); margin-top: 12px; }
+.mini { height: 4px; border-radius: 2px; background: var(--track); margin-top: auto; }
 .mini span { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
-.run-tiles .signal { min-height: 176px; }
+.run-tiles .signal { min-height: 184px; }
 
 /* run history chart */
 .section-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
@@ -830,7 +833,7 @@ h1 { font-size: 44px; line-height: 1.1; font-weight: 750; letter-spacing: -0.035
 .chart .hit { fill: transparent; cursor: default; outline: none; }
 .chart .hit:hover + .pt, .chart .hit:focus + .pt { r: 6; }
 .chart .endlabel { fill: var(--ink); font-size: 12.5px; font-weight: 650; font-family: system-ui, sans-serif; }
-.card-foot { margin: 18px -30px 0; padding: 14px 30px; border-top: 1px solid var(--line); background: var(--sunk);
+.card-foot { margin: 22px -30px 0; padding: 14px 30px; border-top: 1px solid var(--line); background: var(--sunk);
              border-radius: 0 0 14px 14px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
              font-size: 14px; color: var(--ink-2); }
 .card-foot strong { color: var(--ink); }
@@ -840,13 +843,13 @@ h1 { font-size: 44px; line-height: 1.1; font-weight: 750; letter-spacing: -0.035
 .panel > .card-foot { margin-top: auto; }
 
 /* suites */
-.suite { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 6px 14px; align-items: center;
-         padding: 16px 0; border-bottom: 1px solid var(--line-2); }
+.suite { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 10px 14px; align-items: center;
+         padding: 20px 0; border-bottom: 1px solid var(--line-2); }
 .suite:last-of-type { border-bottom: 0; }
 .suite .ic { width: 38px; height: 38px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line);
              display: grid; place-items: center; color: var(--ink-2); grid-row: span 2; }
 .suite strong { display: block; font-weight: 600; }
-.suite code { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+.suite code { display: block; margin-top: 2px; font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
 .suite .num { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .suite .num small { color: var(--muted); font-weight: 500; }
 .suite .bar { grid-column: 2 / -1; height: 6px; border-radius: 3px; background: var(--track); }
@@ -931,7 +934,7 @@ def suite_status(suite: dict) -> str:
 
 def history_chart(points: list[dict]) -> str:
     """Tests passed per merge to main: area + line, a point per run with a hover/focus tooltip, this run labeled."""
-    w, h, left, right, top, bottom = 640, 270, 44, 26, 30, 46
+    w, h, left, right, top, bottom = 640, 300, 44, 26, 30, 64
     peak = max(p["total"] for p in points) or 1
     step = 50 if peak > 60 else 10
     ymax = -(-peak // step) * step
@@ -955,8 +958,8 @@ def history_chart(points: list[dict]) -> str:
                    f'<circle class="pt" cx="{cx:.1f}" cy="{cy:.1f}" r="{5 if p.get("current") else 4}"/>')
         label = f'#{p["run"]}'
         if p.get("current"):
-            out.append(f'<rect class="nowpill" x="{cx - 22:.1f}" y="{h - 30}" width="44" height="24" rx="6"/>')
-        out.append(f'<text class="xtick{" now" if p.get("current") else ""}" x="{cx:.1f}" y="{h - 13}" text-anchor="middle">{esc(label)}</text>')
+            out.append(f'<rect class="nowpill" x="{cx - 22:.1f}" y="{h - 42}" width="44" height="24" rx="6"/>')
+        out.append(f'<text class="xtick{" now" if p.get("current") else ""}" x="{cx:.1f}" y="{h - 25}" text-anchor="middle">{esc(label)}</text>')
     lx, ly = coords[-1]
     out.append(f'<text class="endlabel" x="{lx:.1f}" y="{ly - 12:.1f}" text-anchor="middle">{points[-1]["passed"]}</text>')
     out.append('</svg>')
@@ -1018,11 +1021,9 @@ def to_html(k: dict, sections: dict, latency: list, callouts: list, history: lis
                 if url["run"] else "")
     out.append(f'''<div class="topbar"><div class="crumbs">QA automation {icon("chevron")}<b>Overview</b></div>
   <div class="toplinks"><a class="text" href="{esc(url["allure"])}">Allure test report</a>{run_chip}</div></div>
-<div class="hero"><div><div class="kicker">A clearer picture of quality</div><h1>Quality overview</h1>
-  <div class="when"><span>{esc(ctx["date"])}</span>{f'<span class="sep">·</span><code>{esc(ctx["commit"])}</code>' if ctx["commit"] else ""}
-  {f'<span class="sep">·</span><span>{esc(run_label)}</span>' if ctx["run"] else ""}
-  {'<span class="sep">·</span><span>pull request: a third of main&#39;s load</span>' if ctx["pr"] else ""}</div></div>
-  <div class="actions">{f'<a class="btn" href="{esc(url["run"])}">{icon("file")}Run details</a>' if url["run"] else ""}
+<div class="hero"><h1>Quality overview</h1>
+  <div class="actions"><span class="metapill">{icon("clock")}<span>{esc(ctx["date"])}</span>{f'<span class="sep">·</span><code>{esc(ctx["commit"])}</code>' if ctx["commit"] else ""}{f'<span class="sep">·</span><span>{esc(run_label)}</span>' if ctx["run"] else ""}{'<span class="sep">·</span><span>pull request: ⅓ of main&#39;s load</span>' if ctx["pr"] else ""}</span>
+    {f'<a class="btn" href="{esc(url["run"])}">{icon("file")}Run details</a>' if url["run"] else ""}
     <a class="btn primary" href="kpi.json" download>{icon("download")}Export data</a></div></div>''')
 
     # ---- run status ----
