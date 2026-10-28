@@ -210,9 +210,13 @@ def environment(perf: list | None) -> dict:
     """What this run was built and tested with, from the CI context and requirements.txt."""
     versions = dict(line.strip().split("==") for line in (ROOT / "requirements.txt").read_text().splitlines() if "==" in line)
     login = next((s for s in perf or [] if s["name"] == "login"), None)
+    workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text()
+    runner = re.search(r"runs-on:\s*(\S+)", workflow)
+    allure = re.search(r'ALLURE_VERSION:\s*"([\d.]+)"', workflow)
     return {"commit": os.getenv("GITHUB_SHA", "")[:7], "branch": os.getenv("GITHUB_REF_NAME", ""),
             "python": f"{sys.version_info.major}.{sys.version_info.minor}",
             "pytest": versions.get("pytest"), "playwright": versions.get("playwright"),
+            "runner": runner[1] if runner else None, "allure": allure[1] if allure else None,
             "loadFactor": round(login["requests"] / 200, 1) if login else None}
 
 
@@ -609,11 +613,13 @@ h1 { font-family: var(--font); font-size: 24px; line-height: 1.25; font-weight: 
 .status svg.i { width: 14px; height: 14px; }
 .status.good { color: var(--good); } .status.warning { color: var(--warning); }
 .status.critical { color: var(--critical); } .status.none { color: var(--neutral); }
-.section-label { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: -8px; }
+.section-label { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 2px 16px;
+                 margin-bottom: -8px; }
 h2 { font-size: 16px; font-weight: 600; margin: 0; }
 .meta { font-size: 12px; color: var(--muted); }
 
 .pair { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 24px; }
+.pair.even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .panel { padding: 24px; display: flex; flex-direction: column; }
 .section-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .subtitle { font-size: 12px; color: var(--muted); margin-top: 4px; }
@@ -755,7 +761,8 @@ section[id], div[id] { scroll-margin-top: 16px; }
 #tip strong { display: block; font-size: 13px; }
 #tip span { display: block; color: #cbd5e1; }
 
-@media (max-width: 1180px) { .signals { grid-template-columns: repeat(2, minmax(0, 1fr)); } .pair { grid-template-columns: 1fr; } }
+@media (max-width: 1180px) { .signals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pair, .pair.even { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 860px) {
   .app { grid-template-columns: minmax(0, 1fr); background: var(--page); }
   .side { position: static; height: auto; padding: 14px 16px; border-bottom: 1px solid var(--line); }
@@ -773,6 +780,7 @@ section[id], div[id] { scroll-margin-top: 16px; }
   th, td { padding-left: 16px; padding-right: 16px; }
   th.goal, td.goal, th.chev, td.chev { display: none; }
   .search input { width: 130px; }
+  .env { grid-template-columns: 1fr; } .env dt { padding-bottom: 0; border-bottom: 0; } .env dd { padding-top: 2px; }
   .metapill { white-space: normal; }
   .bars { grid-template-columns: 1fr auto; }
   .bars .track, .ticks { grid-column: 1 / -1; }
@@ -813,6 +821,16 @@ function spy() {
   if (innerHeight + scrollY >= document.documentElement.scrollHeight - 2) current = spyLinks.length - 1;   // page bottom
   spyLinks.forEach((a, i) => a.classList.toggle('on', i === current));
 }
+// room below the last section, so its link can scroll it to the top of the window like every other section
+function roomForLast() {
+  const last = spyTargets[spyTargets.length - 1], wrap = document.querySelector('.wrap');
+  if (!last || !wrap) return;
+  wrap.style.paddingBottom = '0px';
+  const below = wrap.getBoundingClientRect().bottom - last.getBoundingClientRect().top;
+  wrap.style.paddingBottom = Math.max(0, innerHeight - below - 16) + 'px';
+}
+roomForLast();
+addEventListener('resize', roomForLast);
 addEventListener('scroll', spy, { passive: true });
 addEventListener('resize', spy);
 spy();
@@ -1201,7 +1219,8 @@ def to_html_rest(out, k, sections, latency, history, by_key, rows, login, cov, b
   <div class="empty" id="none" hidden>No metric matches this filter.</div>
 </section>''')
 
-    # ---- API latency against each SLO ----
+    # ---- API latency against each SLO, next to the bugs the tests caught ----
+    out.append('<div class="pair">')
     timed = [s for s in latency if s["target"]]
     if timed:
         lat_rows = "".join(
@@ -1218,20 +1237,6 @@ def to_html_rest(out, k, sections, latency, history, by_key, rows, login, cov, b
     else:
         out.append('<section class="card panel" id="latency"><h2>API Latency vs SLO</h2>'
                    '<div class="subtitle">Load tests didn\'t run in this build, so there is no latency to show.</div></section>')
-
-    # ---- environment + bugs ----
-    load = f'PERF_LOAD={env["loadFactor"]:g} · one process' if env["loadFactor"] else "Not run in this build"
-    env_rows = [("Commit", f'<code>{esc(env["commit"] or "local")}</code>'),
-                ("Branch", esc(env["branch"] or "local")),
-                ("API Under Test", "Mock fintech API in Docker"),
-                ("Functional Tests", "<code>pytest -n auto</code> · parallel workers"),
-                ("Load Tests", esc(load)),
-                ("Tools", f'Python {esc(env["python"])} · pytest {esc(env["pytest"])} · Playwright {esc(env["playwright"])}'),
-                ("Also on Merges", "The same tests against an AWS QA environment, created and deleted per run")]
-    out.append(f'''<div class="pair"><section class="card panel" id="environment">
-  <div><h2>Environment</h2><div class="subtitle">What this run was built and tested with.</div></div>
-  <dl class="env">{"".join(f"<dt>{a}</dt><dd>{b}</dd>" for a, b in env_rows)}</dl>
-</section>''')
     sev_max = max(bugs_["bySeverity"].values(), default=1)
     sev_rows = "".join(f'<div class="sev"><span class="name">{esc(s.capitalize())}</span><div class="track"><span style="width:{n / sev_max * 100:.1f}%;'
                        f'background:var(--accent)"></span></div><span class="n">{n}</span></div>'
@@ -1244,6 +1249,33 @@ def to_html_rest(out, k, sections, latency, history, by_key, rows, login, cov, b
   <div class="panel-foot"><span>{"All fixed; the tests that caught them still run." if not bugs_["open"] else f"{bugs_['open']} still open."}</span>
     <a href="{esc(url["repo"])}#bugs-found-in-the-mock-api-and-fixed">See the List{icon("arrow")}</a></div>
 </section></div>''')
+
+    # ---- environment: what this run ran on, in a section of its own ----
+    load = f'PERF_LOAD={env["loadFactor"]:g} · one process' if env["loadFactor"] else "Not run in this build"
+    commit = f'<code>{esc(env["commit"])}</code>' if env["commit"] else "<code>local</code>"
+    runtime_rows = [
+        ("Commit &amp; Branch", f'{commit} · {esc(env["branch"] or "local")}'),
+        ("API Under Test", "Mock fintech API (Flask) in Docker"),
+        ("Functional Tests", "<code>pytest -n auto</code> · parallel workers"),
+        ("UI Tests", f'Playwright {esc(env["playwright"])} · Chromium'),
+        ("Load Tests", esc(load)),
+    ]
+    infra_rows = [
+        ("Runtime", f'Python {esc(env["python"])} · pytest {esc(env["pytest"])}'),
+        ("CI/CD", f'GitHub Actions · <code>{esc(env["runner"] or "-")}</code> runners'),
+        ("Containers", "Docker Compose · <code>api</code> and <code>tests</code> images"),
+        ("AWS QA Environment", "On merges to main: an EC2 instance created per run with CloudFormation, tested, then deleted"),
+        ("Reports", f'Allure {esc(env["allure"] or "")} and this dashboard, on GitHub Pages'),
+    ]
+    env_card = lambda title, sub, ico, rows: f'''<section class="card panel">
+    <div class="section-title"><div><h2>{title}</h2><div class="subtitle">{sub}</div></div><span class="ic-muted">{icon(ico)}</span></div>
+    <dl class="env">{"".join(f"<dt>{a}</dt><dd>{b}</dd>" for a, b in rows)}</dl></section>'''
+    out.append(f'''<div class="section-label" id="environment"><h2>Environment</h2>
+  <span class="meta">Runtime parameters and infrastructure configuration</span></div>
+<div class="pair even">
+  {env_card("Runtime &amp; Test Configuration", "What was tested, and how.", "flask", runtime_rows)}
+  {env_card("Infrastructure &amp; Tooling", "Where it ran, and what powered the build.", "server", infra_rows)}
+</div>''')
 
     out.append(f'''<footer>Not measured here, and why: escaped defects, Sev-2 incidents and time to detect need production
 traffic and an incident tracker; flaky-test rate needs reruns of the same commit.

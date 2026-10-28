@@ -51,3 +51,30 @@
 /* with zero failures there is nothing to sort, filter or search: hide those controls */
 .qa-categories-clear .tree__ctrl, .qa-categories-clear .pane__search,
 .qa-categories-clear .pane__controls { display: none !important; }   /* Allure's own rule for the title icons wins otherwise */
+
+/* One green across the report and the QA dashboard: Allure's bright green and violet highlight become the
+   dashboard's emerald (#10b981 marks, #047857 text; dark: #0ea371 marks, #34d399 text). Only "passed",
+   "success" and the active/primary highlight change: "unknown" keeps Allure's violet, so it never looks passed.
+   :root:root outranks Allure's own :root definitions. */
+:root:root {
+  --color-status-passed-bg: #059669; --color-status-passed-border: #10b981; --color-status-passed-text: #047857;
+  --color-status-passed-chart: #059669; --color-status-passed-chart-fill: #10b981; --color-status-passed-bg-subtle: rgba(16, 185, 129, 0.14);
+  --color-intent-success-bg: #059669; --color-intent-success-bg-hover: #047857; --color-intent-success-bg-active: #065f46;
+  --color-intent-success-bg-subtle: rgba(16, 185, 129, 0.08); --color-intent-success-bg-subtle-hover: rgba(16, 185, 129, 0.14);
+  --color-intent-success-bg-subtle-active: rgba(16, 185, 129, 0.2); --color-intent-success-text: #047857; --color-intent-success-border: #047857;
+  --color-intent-primary-bg: #047857; --color-intent-primary-bg-hover: #065f46; --color-intent-primary-bg-active: #064e3b;
+  --color-intent-primary-text: #047857;
+  --color-nav-item-bg-active: rgba(16, 185, 129, 0.12); --color-nav-item-bg-active-hover: rgba(16, 185, 129, 0.18);
+  --color-nav-item-text-active: #047857; --color-nav-item-icon-active: #047857; --color-sorter-fg-active: #047857;
+}
+:root:root[data-theme="dark"] {
+  --color-status-passed-bg: #0ea371; --color-status-passed-border: #0ea371; --color-status-passed-text: #34d399;
+  --color-status-passed-chart: #0ea371; --color-status-passed-chart-fill: #0ea371; --color-status-passed-bg-subtle: rgba(16, 185, 129, 0.18);
+  --color-intent-success-bg: #0ea371; --color-intent-success-bg-hover: #10b981; --color-intent-success-bg-active: #059669;
+  --color-intent-success-bg-subtle: rgba(16, 185, 129, 0.12); --color-intent-success-bg-subtle-hover: rgba(16, 185, 129, 0.18);
+  --color-intent-success-bg-subtle-active: rgba(16, 185, 129, 0.24); --color-intent-success-text: #34d399; --color-intent-success-border: #34d399;
+  --color-intent-primary-bg: #10b981; --color-intent-primary-bg-hover: #34d399; --color-intent-primary-bg-active: #059669;
+  --color-intent-primary-text: #34d399;
+  --color-nav-item-bg-active: rgba(16, 185, 129, 0.14); --color-nav-item-bg-active-hover: rgba(16, 185, 129, 0.2);
+  --color-nav-item-text-active: #34d399; --color-nav-item-icon-active: #34d399; --color-sorter-fg-active: #34d399;
+}
