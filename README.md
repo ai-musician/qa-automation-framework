@@ -327,7 +327,7 @@ Every run writes to `reports/`:
 | `allure-results/` | raw results for the **Allure report**: each test with its API calls attached, grouped by layer and module |
 | `artifacts/<test>/test-failed-1.png` | screenshot of the browser at the moment a UI test failed |
 | `performance.html` / `performance.json` | after `pytest -m perf`: req/s, TP50/TP90/TP99/TP99.9, errors and pass/fail per scenario |
-| `kpi.md` / `kpi.json` | after `python -m utils.kpi`: the QA metrics review (see below) |
+| `kpi.md` / `kpi.html` / `kpi.json` | after `python -m utils.kpi`: the QA metrics review, as the CI summary, a dashboard, and data (see below) |
 
 **Allure report.** Every merge to main publishes it to GitHub Pages, so anyone can open it without downloading
 anything: **https://ai-musician.github.io/qa-automation-framework/**. It shows each test's API calls (request and
@@ -349,8 +349,10 @@ shows a different number of tests than JUnit says ran.
 
 ## QA KPIs
 
-Every CI run ends with a **QA metrics review** on its summary page (`utils/kpi.py`, standard library only). The
-full definitions, goals and reasoning are in **[docs/KPIs.md](docs/KPIs.md)**; in short:
+Every CI run ends with a **QA metrics review** on its summary page (`utils/kpi.py`, standard library only), and
+every merge to main publishes it as a dashboard: **https://ai-musician.github.io/qa-automation-framework/kpi/**
+(headline tiles, every metric against its goal, TP99 against each API's SLO with trend lines, light and dark mode).
+The full definitions, goals and reasoning are in **[docs/KPIs.md](docs/KPIs.md)**; in short:
 
 | Section | Metrics | Goals |
 |---|---|---|

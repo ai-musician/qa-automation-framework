@@ -14,7 +14,8 @@
 #   aws-qa       merges to main (and manual runs): creates a QA environment on AWS from infra/qa-env.yml, runs the
 #                API + UI tests against it, deletes it, and checks nothing was left (see README: AWS QA environment)
 #   allure       merges to main (and manual runs): builds the Allure report from both test jobs, with history,
-#                and publishes it to GitHub Pages; refuses to publish if a credential made it into the report
+#                and publishes it with the KPI dashboard (/kpi/) to GitHub Pages; refuses to publish if a
+#                credential made it into either
 #
 # Reports are attached to each run under "Artifacts"; performance results and KPIs also show on the run's summary page.
 
@@ -169,8 +170,8 @@ jobs:
           retention-days: 90
 
   allure:
-    name: Allure report (GitHub Pages)
-    needs: [functional, performance]
+    name: Allure report + KPI dashboard (GitHub Pages)
+    needs: [functional, performance, kpi]
     # main only: the report is public. always(): a red run is exactly the one worth looking at
     if: always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.functional.result != 'cancelled'
     runs-on: ubuntu-24.04
@@ -235,6 +236,13 @@ jobs:
            {"name": "Test defects", "matchedStatuses": ["broken"]}]
           EOF
 
+      - name: Download the KPI dashboard
+        uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: kpi-report
+          path: reports/kpi
+
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -246,6 +254,8 @@ jobs:
             "https://github.com/allure-framework/allure2/releases/download/$ALLURE_VERSION/allure-$ALLURE_VERSION.tgz"
           tar xzf allure.tgz
           "allure-$ALLURE_VERSION/bin/allure" generate results -o site --clean
+          # the KPI dashboard (utils/kpi.py) goes next to the report, at /kpi/
+          if [ -f reports/kpi/kpi.html ]; then mkdir -p site/kpi && cp reports/kpi/kpi.html site/kpi/index.html; fi
 
       - name: Check the report shows every test that ran
         run: |
@@ -278,7 +288,8 @@ jobs:
         uses: actions/deploy-pages@v5
 
       - name: Link the report on the run page
-        run: echo "### [Allure report](${{ steps.deploy.outputs.page_url }})" >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          echo "### [Allure report](${{ steps.deploy.outputs.page_url }}) · [KPI dashboard](${{ steps.deploy.outputs.page_url }}kpi/)" >> "$GITHUB_STEP_SUMMARY"
 
   aws-qa:
     name: Tests on AWS QA environment
