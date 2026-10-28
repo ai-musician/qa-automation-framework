@@ -1,0 +1,63 @@
+# The mock fintech API on Kubernetes: the same `api` image as docker-compose.yml, behind a Service named `api`,
+# so the tests reach it at http://api:5050 exactly as they do in Docker Compose.
+#
+# The API keys come from the `api-keys` Secret, which scripts/k8s_test.sh generates for every run (never committed).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: qa
+  labels: {app: api}
+spec:
+  # One replica: the mock keeps its users and transactions in memory, so a second pod would hold different data and
+  # a user created on one could be missing on the other. A real service would scale out behind a shared database.
+  replicas: 1
+  selector:
+    matchLabels: {app: api}
+  template:
+    metadata:
+      labels: {app: api}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: api
+          image: qa-api:local
+          imagePullPolicy: Never          # built and loaded into the cluster by scripts/k8s_test.sh, not pulled
+          ports:
+            - containerPort: 5050
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "5050"
+          envFrom:
+            - secretRef: {name: api-keys}  # API_KEY, ADMIN_API_KEY
+          readinessProbe:                 # no traffic until the API answers
+            httpGet: {path: /, port: 5050}
+            periodSeconds: 2
+            failureThreshold: 15
+          livenessProbe:                  # restarted if it stops answering
+            httpGet: {path: /, port: 5050}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: qa
+spec:
+  selector: {app: api}
+  ports:
+    - port: 5050
+      targetPort: 5050
