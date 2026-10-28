@@ -309,4 +309,5 @@ def home():
     return jsonify({"status": "ok"})
 
 if __name__ == "__main__":
-    app.run(port=int(os.getenv("PORT", "5050")))
+    # HOST=0.0.0.0 in Docker, so other containers can reach it; the default only accepts this machine
+    app.run(host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", "5050")))

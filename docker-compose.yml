@@ -1,0 +1,32 @@
+# The API and the tests in separate containers, like a service and its test runner in a real pipeline.
+#
+#   docker compose run --rm tests                    # API + UI tests
+#   docker compose run --rm tests pytest -m perf     # performance tests (PERF_LOAD=3 docker compose run ... for 3x)
+#   docker compose up api                            # just the API, at http://localhost:5050
+#   docker compose down                              # stop and remove the containers
+#
+# Reports are written to ./reports on this machine.
+
+services:
+  api:
+    build:
+      context: .
+      target: api
+    ports:
+      - "5050:5050"
+
+  tests:
+    build:
+      context: .
+      target: tests
+    depends_on:
+      api:
+        condition: service_healthy     # wait until the API answers (its HEALTHCHECK)
+    environment:
+      BASE_URL: http://api:5050         # "api" is the service name above: Docker's network resolves it
+      API_BASE_URL: http://api:5050
+      START_MOCK_SERVER: "false"
+      PERF_LOAD: ${PERF_LOAD:-1}
+    volumes:
+      - ./reports:/app/reports
+    ipc: host                          # recommended for Chromium in Docker: avoids crashes from a small /dev/shm

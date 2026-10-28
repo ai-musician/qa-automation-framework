@@ -1,5 +1,7 @@
 # Runs on every pull request to main (each new push to the PR runs it again) and on every merge to main.
 #
+# The API and the tests run in Docker containers (docker-compose.yml): the same commands as on a laptop.
+#
 #   functional   API + UI tests (plain `pytest`)                       ~1-2 min
 #   changes      decides whether the performance tests are needed (see PERF_PATHS below)
 #   performance  load + concurrency tests (`pytest -m perf`)           ~1 min
@@ -34,18 +36,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          python -m playwright install --with-deps chromium
+      - name: Build the API and test images
+        run: docker compose build
 
       - name: Run API + UI tests
-        run: pytest
+        run: docker compose run --rm tests
+
+      - name: Show the API's log
+        if: failure()
+        run: docker compose logs api
 
       - name: Upload reports (HTML, JUnit, API log, failure screenshots)
         if: always()            # most useful when the tests failed
@@ -71,8 +70,8 @@ jobs:
           EVENT: ${{ github.event_name }}
           # pull request: compare with the branch it merges into; push: compare with the previous commit on main
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-          # the API under test, the load tests and their helpers, test setup, dependencies, and this pipeline
-          PERF_PATHS: '^(mock_server/[^/]*\.py$|tests/perf/|utils/|conftest\.py$|config\.py$|pytest\.ini$|requirements\.txt$|\.github/workflows/)'
+          # the API under test, the load tests and their helpers, test setup, dependencies, the containers, and this pipeline
+          PERF_PATHS: '^(mock_server/[^/]*\.py$|tests/perf/|utils/|conftest\.py$|config\.py$|pytest\.ini$|requirements\.txt$|Dockerfile$|docker-compose\.yml$|\.dockerignore$|\.github/workflows/)'
         run: |
           # manual run, or nothing to compare with (first push of a branch): run everything
           if [ "$EVENT" = "workflow_dispatch" ] || [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
@@ -100,16 +99,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt     # no browser needed
+      - name: Build the API and test images
+        run: docker compose build
 
       - name: Run performance tests (PERF_LOAD=${{ env.PERF_LOAD }})
-        run: pytest -m perf
+        run: docker compose run --rm tests pytest -m perf      # PERF_LOAD is passed into the container
+
+      - name: Show the API's log
+        if: failure()
+        run: docker compose logs api
 
       - name: Show results on the run page
         if: always()

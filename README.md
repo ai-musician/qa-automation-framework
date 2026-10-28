@@ -34,13 +34,27 @@ pytest                      # run everything (starts the mock server automatical
 
 After a run, open the report: `open reports/report.html`
 
+### Or in Docker (nothing to install but Docker)
+
+```bash
+docker compose run --rm tests                    # API + UI tests: the API and the tests in separate containers
+docker compose run --rm tests pytest -m perf     # performance tests (PERF_LOAD=3 docker compose run ... for 3x)
+docker compose run --rm tests pytest -m api      # any pytest command works the same way
+docker compose up api                            # just the API, at http://localhost:5050
+docker compose down                              # stop and remove the containers
+```
+
+Reports are written to `reports/` on your machine, as in a local run. CI runs these same commands.
+
 ---
 
 ## Project layout
 
 ```
 .github/workflows/
-  tests.yml           CI: functional + performance tests, then QA KPIs, on every pull request and merge to main
+  tests.yml           CI: functional + performance tests (in Docker), then QA KPIs, on every pull request and merge to main
+Dockerfile            Two images: api (the mock API) and tests (pytest + Playwright with browsers)
+docker-compose.yml    Runs the API and the tests in separate containers
 mock_server/
   app.py              The system under test: a Flask stand-in for the API gateway + services
   static/index.html   Mock frontend (sign in, register user, send transaction, history)
@@ -183,6 +197,12 @@ the most common cause of flaky UI tests: reading the page before the server has 
 **UI action, API verification.** `test_register_user` registers through the browser, then fetches the user through
 the API to confirm what was actually stored. This checks that the UI and backend agree, not just what the screen shows.
 
+**Docker: one image for the API, one for the tests.** The tests image starts from Microsoft's Playwright image at
+the same version as `requirements.txt`, so the browsers always match the library and nobody installs them by hand.
+The API image holds only Flask and the mock server (about 50 MB). Keeping them apart mirrors production, where the
+service and its test runner are deployed separately; pointing the tests image at staging is just a change of
+`API_BASE_URL`. The API container has a health check, and the tests wait for it instead of sleeping.
+
 ---
 
 ## Environment configuration
@@ -195,7 +215,7 @@ Settings come from environment variables, optionally loaded from `.env.<ENV_NAME
 | `BASE_URL` | `http://localhost:5050` | frontend URL |
 | `API_BASE_URL` | `http://localhost:5050` | API gateway URL |
 | `API_KEY` / `ADMIN_API_KEY` | demo keys | credentials for the user / admin role |
-| `START_MOCK_SERVER` | `true` | `false` when testing a deployed environment |
+| `START_MOCK_SERVER` | `true` | `false` when testing a deployed environment (and in Docker, where the API has its own container) |
 
 Example `.env.staging` (git-ignored, so real keys are never committed):
 
@@ -290,10 +310,14 @@ What the numbers mean and don't mean:
 `.github/workflows/tests.yml` runs on every **pull request** to `main` (again on each new push to it) and on every
 **merge** to `main`. It can also be started by hand from the Actions tab.
 
+Both test jobs run in **Docker** (`docker compose run --rm tests ...`), the same commands as on a laptop, so a
+failure in CI can be reproduced locally with one command. The API runs in its own container, and the tests reach it
+by its service name (`http://api:5050`), as they would reach a deployed service.
+
 | Job | Runs | Pull request | Merge to `main` |
 |---|---|---|---|
-| **API + UI tests** | `pytest` | ✅ | ✅ |
-| **Performance tests** | `pytest -m perf`, only if the first job passed **and** a performance-relevant file changed | normal load (`PERF_LOAD=1`): a quick check before merging | **3× load** (`PERF_LOAD=3`), on the code that gets deployed |
+| **API + UI tests** | `docker compose run --rm tests` | ✅ | ✅ |
+| **Performance tests** | `docker compose run --rm tests pytest -m perf`, only if the first job passed **and** a performance-relevant file changed | normal load (`PERF_LOAD=1`): a quick check before merging | **3× load** (`PERF_LOAD=3`), on the code that gets deployed |
 | **QA KPIs** | `python -m utils.kpi` on the two jobs' reports, always | ✅ | ✅ |
 
 - A third job, **QA KPIs**, always runs after the other two (also when they failed or performance was skipped)
