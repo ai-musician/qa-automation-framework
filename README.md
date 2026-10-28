@@ -97,6 +97,35 @@ docker compose run --rm --build --no-deps \
 | CI against a QA server | GitHub Actions secrets, masked in the logs |
 | [AWS QA environment](#aws-qa-environment) | Generated fresh for every run, masked in the logs, and gone when the environment is deleted |
 
+### Run on Kubernetes
+
+The same two images, deployed to a local Kubernetes cluster ([kind](https://kind.sigs.k8s.io/): Kubernetes in
+Docker). CI runs this on every pull request and merge (job "Tests on Kubernetes").
+
+```bash
+brew install kind kubectl          # once; also needs Docker running
+scripts/k8s_test.sh                # cluster, images, Secret, API, tests: exits non-zero if any test fails
+kind delete cluster --name qa      # remove the cluster
+```
+
+| File | What it defines |
+|---|---|
+| `k8s/api.yaml` | **Deployment** `api`: readiness and liveness probes, CPU/memory requests and limits, runs as non-root with a read-only filesystem. **Service** `api`: the tests reach it at `http://api:5050`, as in Docker Compose |
+| `k8s/tests-job.yaml` | **Job** `tests`: an init container waits until the API answers, then `pytest -n auto` runs once (`backoffLimit: 0`: a failed run is a result, not something to retry); `/dev/shm` enlarged for Chromium |
+| `scripts/k8s_test.sh` | creates the cluster, builds and loads the images, stores new API keys in the **Secret** `api-keys` (read by both the API and the tests), deploys, runs the Job, prints its output |
+
+One API replica: the mock keeps its data in memory, so a second pod would hold different users. A real service
+would scale out behind a shared database.
+
+Looking around while it runs:
+
+```bash
+kubectl --context kind-qa -n qa get pods                   # the API pod and the tests pod
+kubectl --context kind-qa -n qa logs -f job/tests          # the test output, live
+kubectl --context kind-qa -n qa describe deployment api    # probes, limits, events
+kubectl --context kind-qa -n qa port-forward svc/api 5050  # the API at http://localhost:5050
+```
+
 ---
 
 ## Project layout

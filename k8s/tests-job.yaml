@@ -1,0 +1,51 @@
+# The API + UI tests as a Kubernetes Job: the same `tests` image as docker-compose.yml, run once against the `api`
+# Service. The Job succeeds only if every test passes; scripts/k8s_test.sh waits for it and prints the results.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: tests
+  namespace: qa
+spec:
+  backoffLimit: 0                         # a failed test run is a result, not something to retry
+  activeDeadlineSeconds: 900
+  template:
+    spec:
+      restartPolicy: Never
+      initContainers:
+        - name: wait-for-api              # start the tests only once the API answers through its Service
+          image: qa-tests:local
+          imagePullPolicy: Never
+          command:
+            - python
+            - -c
+            - |
+              import time, urllib.request
+              for _ in range(90):
+                  try:
+                      urllib.request.urlopen("http://api:5050/", timeout=2); break
+                  except Exception:
+                      time.sleep(2)
+              else:
+                  raise SystemExit("the API did not answer within 3 minutes")
+      containers:
+        - name: tests
+          image: qa-tests:local
+          imagePullPolicy: Never
+          env:
+            - name: BASE_URL
+              value: http://api:5050      # "api" is the Service above: cluster DNS resolves it
+            - name: API_BASE_URL
+              value: http://api:5050
+            - name: START_MOCK_SERVER
+              value: "false"
+          envFrom:
+            - secretRef: {name: api-keys} # the same keys the API was started with
+          resources:
+            requests: {cpu: "1", memory: 1Gi}
+            limits: {memory: 3Gi}
+          volumeMounts:
+            - name: dshm                  # Chromium needs more shared memory than a pod's default 64 MB
+              mountPath: /dev/shm
+      volumes:
+        - name: dshm
+          emptyDir: {medium: Memory, sizeLimit: 1Gi}

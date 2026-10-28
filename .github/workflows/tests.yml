@@ -10,6 +10,8 @@
 #                (manual runs from the Actions tab always include it)
 #                pull request: normal load (PERF_LOAD=1), a quick check before merging
 #                merge to main: 3x the load (PERF_LOAD=3), on the code that will be deployed
+#   kubernetes   deploys the API to a throwaway Kubernetes cluster (kind) and runs the API + UI tests there as a
+#                Job: scripts/k8s_test.sh, the same script as on a laptop (see README: Run on Kubernetes)  ~3 min
 #   kpi          QA KPIs from the two jobs' reports (utils/kpi.py), always runs; reports, never fails the build
 #   aws-qa       merges to main (and manual runs): creates a QA environment on AWS from infra/qa-env.yml, runs the
 #                API + UI tests against it, deletes it, and checks nothing was left (see README: AWS QA environment)
@@ -130,6 +132,27 @@ jobs:
           name: performance-reports
           path: reports/
           retention-days: 30
+
+  kubernetes:
+    name: Tests on Kubernetes (kind)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Create a Kubernetes cluster (kind)
+        uses: helm/kind-action@v1.12.0
+        with:
+          cluster_name: qa              # the name scripts/k8s_test.sh uses
+
+      - name: Deploy the API and run the tests as a Job
+        run: scripts/k8s_test.sh
+
+      - name: Show the cluster's state
+        if: failure()
+        run: |
+          kubectl --context kind-qa -n qa get all
+          kubectl --context kind-qa -n qa get events --sort-by=.lastTimestamp | tail -30
 
   kpi:
     name: QA KPIs
