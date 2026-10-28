@@ -17,6 +17,8 @@ from pathlib import Path
 
 import requests
 
+from utils.http import Session
+
 
 @dataclass
 class Summary:
@@ -49,7 +51,7 @@ def run_load(name, send, requests_total, concurrency, warmup=10, ok_statuses=(20
 
     def one(i):
         if not hasattr(local, "session"):
-            local.session = requests.Session()
+            local.session = Session()
         start = time.perf_counter()
         try:
             res = send(local.session, i)

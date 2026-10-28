@@ -13,6 +13,7 @@ import pytest, requests
 
 import config as settings   # "config" is also the name pytest gives its own config object in hooks
 from utils.factories import make_user
+from utils.http import Session
 from utils.redact import add_secret, redact, redact_headers
 
 log = logging.getLogger("api")
@@ -107,7 +108,7 @@ class Client:
     """Sends requests to BASE_URL, so tests only write the path ("/api/users")."""
 
     def __init__(self):
-        self.session = requests.Session()
+        self.session = Session()
 
     def _log(self, res):
         """Every request and response goes to api.log and, as an attachment, to the test in the Allure report,
