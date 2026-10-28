@@ -11,6 +11,8 @@
 #                pull request: normal load (PERF_LOAD=1), a quick check before merging
 #                merge to main: 3x the load (PERF_LOAD=3), on the code that will be deployed
 #   kpi          QA KPIs from the two jobs' reports (utils/kpi.py), always runs; reports, never fails the build
+#   aws-qa       merges to main (and manual runs): creates a QA environment on AWS from infra/qa-env.yml, runs the
+#                API + UI tests against it, deletes it, and checks nothing was left (see README: AWS QA environment)
 #   allure       merges to main (and manual runs): builds the Allure report from both test jobs, with history,
 #                and publishes it to GitHub Pages; refuses to publish if a credential made it into the report
 #
@@ -275,3 +277,116 @@ jobs:
 
       - name: Link the report on the run page
         run: echo "### [Allure report](${{ steps.deploy.outputs.page_url }})" >> "$GITHUB_STEP_SUMMARY"
+
+  aws-qa:
+    name: Tests on AWS QA environment
+    needs: functional               # no point deploying a build that already failed
+    # main only: the AWS role trusts main of this repository and nothing else (infra/aws-setup.yml)
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.AWS_ROLE_ARN != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write               # GitHub's OIDC token, exchanged for short-lived AWS credentials
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      STACK: qa-env-${{ github.run_id }}-${{ github.run_attempt }}
+      INSTANCE_TYPE: t3.micro
+      HOURLY_USD: "0.0124"          # on-demand t3.micro, Linux, us-west-1; for the cost estimate only
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Generate this run's API keys
+        run: |
+          # new keys for every environment: nothing to store, rotate or leak; masked in every log line
+          for name in API_KEY ADMIN_API_KEY; do
+            value=$(openssl rand -hex 24)
+            echo "::add-mask::$value"
+            echo "$name=$value" >> "$GITHUB_ENV"
+          done
+          echo "RUNNER_IP=$(curl -sSf https://checkip.amazonaws.com)" >> "$GITHUB_ENV"
+          echo "CREATED_AT=$(date -u +%s)" >> "$GITHUB_ENV"
+
+      - name: Create the QA environment
+        run: |
+          aws cloudformation create-stack --stack-name "$STACK" \
+            --template-body file://infra/qa-env.yml \
+            --tags Key=project,Value=qa-env \
+            --parameters \
+              ParameterKey=CommitSha,ParameterValue="$GITHUB_SHA" \
+              ParameterKey=RunnerCidr,ParameterValue="$RUNNER_IP/32" \
+              ParameterKey=ApiKey,ParameterValue="$API_KEY" \
+              ParameterKey=AdminApiKey,ParameterValue="$ADMIN_API_KEY" \
+              ParameterKey=InstanceType,ParameterValue="$INSTANCE_TYPE"
+          if ! aws cloudformation wait stack-create-complete --stack-name "$STACK"; then
+            aws cloudformation describe-stack-events --stack-name "$STACK" \
+              --query 'StackEvents[?contains(ResourceStatus, `FAILED`)].[LogicalResourceId,ResourceStatusReason]' --output text
+            exit 1
+          fi
+          url=$(aws cloudformation describe-stacks --stack-name "$STACK" \
+            --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text)
+          echo "API_URL=$url" >> "$GITHUB_ENV"
+          echo "QA environment: $url"
+
+      - name: Wait for the API
+        run: |
+          # the instance builds the api image from this commit first: a few minutes
+          for i in $(seq 1 60); do
+            if curl -sf "$API_URL/" > /dev/null; then echo "API is up after $((i * 10)) s"; exit 0; fi
+            sleep 10
+          done
+          echo "::error::The API on the QA environment didn't answer within 10 minutes"
+          exit 1
+
+      - name: Build the test image
+        run: docker compose build tests
+
+      - name: Run API + UI tests against the QA environment
+        run: |
+          # the same test image as every other job; only the address and the keys change (--no-deps: no local API)
+          docker compose run --rm --no-deps \
+            -e BASE_URL="$API_URL" -e API_BASE_URL="$API_URL" -e API_KEY -e ADMIN_API_KEY \
+            tests
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: aws-qa-reports
+          path: reports/
+          retention-days: 14
+
+      - name: Delete the QA environment
+        if: always()                # also when tests failed or the run was cancelled
+        run: |
+          aws cloudformation delete-stack --stack-name "$STACK"
+          aws cloudformation wait stack-delete-complete --stack-name "$STACK"
+          echo "DELETED_AT=$(date -u +%s)" >> "$GITHUB_ENV"
+
+      - name: Check nothing was left running
+        if: always()
+        run: |
+          left=$(aws ec2 describe-instances \
+            --filters Name=tag:project,Values=qa-env Name=instance-state-name,Values=pending,running,stopping,stopped \
+            --query 'Reservations[].Instances[].InstanceId' --output text)
+          if [ -n "$left" ]; then
+            echo "::error::QA environment instances still exist: $left"
+            exit 1
+          fi
+          end=${DELETED_AT:-$(date -u +%s)}
+          minutes=$(( (end - ${CREATED_AT:-$end} + 59) / 60 ))
+          cost=$(awk -v m="$minutes" -v h="$HOURLY_USD" 'BEGIN { printf "%.4f", m / 60 * h }')
+          {
+            echo "### AWS QA environment"
+            echo "| Stage | |"
+            echo "|---|---|"
+            echo "| Created | \`$STACK\`: one $INSTANCE_TYPE in $AWS_REGION, port 5050 open to this runner only, keys generated for this run |"
+            echo "| Tested | API + UI tests: see the job log and the aws-qa-reports artifact |"
+            echo "| Deleted | stack deleted, no instances tagged project=qa-env left |"
+            echo "| Lifetime | $minutes min, ≈ \$$cost at on-demand price |"
+          } >> "$GITHUB_STEP_SUMMARY"

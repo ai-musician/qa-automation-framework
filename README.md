@@ -114,6 +114,9 @@ data/
   bugs.json           Bugs found before release, with severity (feeds the KPI report)
   *.json              Seed data for the scripts
 scripts/              Load seed data into a running server by hand
+infra/
+  aws-setup.yml       One-time AWS setup: budget alert, GitHub OIDC login, least-privilege role for CI
+  qa-env.yml          The per-run QA environment: one instance running the api image, open to the CI runner only
 docs/
   KPIs.md             QA KPI framework: every metric's definition, source, goal, and what happens when it's red
 reports/              Generated: HTML report, JUnit XML, API log, failure screenshots (git-ignored)
@@ -255,6 +258,38 @@ service and its test runner are deployed separately; pointing the tests image at
 
 ---
 
+## AWS QA environment
+
+On every merge to main, a CI job creates a real QA environment on AWS, runs the API + UI tests against it, and
+deletes it: the same test image as everywhere else, pointed at a different address.
+
+| Stage | How |
+|---|---|
+| **Create** | `infra/qa-env.yml` (CloudFormation): one `t3.micro` that builds the `api` image from the run's exact commit, with the same Dockerfile as locally |
+| **Test** | `docker compose run --no-deps -e API_BASE_URL=http://<instance>:5050 ... tests`, as in [Run against a QA server](#run-against-a-qa-server) |
+| **Delete** | always, also when tests fail or the run is cancelled; then CI checks no instance tagged `project=qa-env` is left, and fails if one is |
+
+**Cost controls**
+- The environment exists only during a run (a few minutes); the run summary shows its lifetime and estimated cost.
+- Safety net: the instance terminates itself after 60 minutes even if CI never deletes it (`shutdown` with
+  `InstanceInitiatedShutdownBehavior: terminate`).
+- A monthly **budget alert** is defined as code in `infra/aws-setup.yml` (emails at 85% and 100% of $5, and when the
+  forecast passes it). The email address is a deploy-time parameter, so it isn't in the repository.
+
+**Security controls**
+- **No AWS keys in GitHub.** CI signs in with GitHub's OIDC token for short-lived credentials. The role
+  (`infra/aws-setup.yml`) trusts only `main` of this repository, so pull requests and forks can't use it.
+- **Least privilege.** The role can create and delete `qa-env-*` stacks, launch only `t2/t3.micro` in one region,
+  and delete only resources tagged `project=qa-env`.
+- **Not public.** Port 5050 is open to the CI runner's IP address only; the instance requires IMDSv2.
+- **New API keys every run**, generated in CI, masked in the CI log and in every report, never stored.
+
+One-time setup (an admin, in the AWS console): deploy `infra/aws-setup.yml` as a CloudFormation stack (set
+`CreateGitHubOIDCProvider` to `false` if the account already has GitHub's identity provider), then save its outputs
+as repository variables `AWS_ROLE_ARN` and `AWS_REGION`. Without them the job is skipped.
+
+---
+
 ## Environment configuration
 
 Settings come from environment variables, optionally loaded from `.env.<ENV_NAME>` (default `local`):
@@ -392,6 +427,7 @@ by its service name (`http://api:5050`), as they would reach a deployed service.
 | **Performance tests** | `docker compose run --rm tests pytest -m perf`, only if the first job passed **and** a performance-relevant file changed | normal load (`PERF_LOAD=1`): a quick check before merging | **3× load** (`PERF_LOAD=3`), on the code that gets deployed |
 | **QA KPIs** | `python -m utils.kpi` on the two jobs' reports, always | ✅ | ✅ |
 | **Allure report** | builds the report from both jobs' results, with history, and publishes it to GitHub Pages | - | ✅ |
+| **Tests on AWS QA environment** | creates the environment, runs API + UI tests against it, deletes it, checks nothing is left | - | ✅ |
 
 - **Allure report** runs on merges to main only (the report is public), also when tests failed, since a red run is
   the one worth looking at. It refuses to publish if a credential made it into the report.
