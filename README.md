@@ -8,12 +8,26 @@
 |---|---|
 | **[QA dashboard](https://ai-musician.github.io/qa-automation-framework/)** | the run's status, quality KPIs against their goals, trends, latency against SLOs |
 | **[Test report](https://ai-musician.github.io/qa-automation-framework/report/)** | every test with its steps and API calls (Allure) |
-| **[CI runs](https://github.com/ai-musician/qa-automation-framework/actions/workflows/tests.yml?query=branch%3Amain)** | API + UI, performance, AWS QA environment, KPIs, publishing |
+| **[CI runs](https://github.com/ai-musician/qa-automation-framework/actions/workflows/tests.yml?query=branch%3Amain)** | API + UI, performance, Kubernetes with chaos tests, AWS QA environment, KPIs, publishing |
 
-Test automation framework for the Senior Quality Engineer take-home assessment.
-It tests a fintech system (users, transactions, auth) through its **REST API** and its **web UI**.
+A test automation framework for a fintech API and web UI (users, transactions, auth), with a mock LLM inference
+service for performance and reliability testing. Every change runs through CI on Docker, Kubernetes and AWS.
 
-**Stack:** Python 3.12 · pytest · Playwright · requests · Faker · Flask (mock server)
+**Highlights**
+
+| | |
+|---|---|
+| **[Inference performance](#inference-performance)** | an OpenAI-compatible streaming endpoint; time to first token, time between tokens and tokens/s at 1–32 concurrent users, finding the capacity knee |
+| **[Chaos testing on Kubernetes](#chaos-testing-losing-an-inference-pod-under-load)** | one of two inference replicas stopped under load: 0 failed replies on a graceful stop, and the service keeps answering through a crash |
+| **[Run on Kubernetes](#run-on-kubernetes)** | the API as a Deployment with probes, limits and a hardened security context; the tests as a Job; a fresh kind cluster in CI on every change |
+| **[Performance testing](#performance-testing)** | load tests with TP99 SLOs, 200 users each with their own API key, no lost writes under concurrency |
+| **[AWS QA environment](#aws-qa-environment)** | created per run with CloudFormation, tested, then deleted; no stored AWS keys (OIDC) |
+| **[QA KPIs](#qa-kpis)** | the dashboard above: KPIs against goals, latency regressions that tell a slow CI machine from a slower service |
+
+**Stack:** Python 3.12 · pytest (xdist, fixtures, markers, parametrize) · Playwright · requests · Flask (mock server)
+· Docker · Kubernetes (kind) · GitHub Actions · AWS CloudFormation · Allure
+
+It started as a Senior Quality Engineer take-home assessment, and has grown since.
 
 > The assessment allows "the language you are most comfortable with", so this uses **Python + pytest + Playwright**
 > instead of JavaScript. Playwright for Python is the same engine as Playwright for JS: same browsers,
