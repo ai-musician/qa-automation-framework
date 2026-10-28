@@ -140,10 +140,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Create a Kubernetes cluster (kind)
-        uses: helm/kind-action@v1.12.0
-        with:
-          cluster_name: qa              # the name scripts/k8s_test.sh uses
+      # kind from its release, pinned and checksum-verified; scripts/k8s_test.sh creates the cluster
+      # (kubectl and Docker are already on GitHub's Ubuntu runners)
+      - name: Install kind
+        env:
+          KIND_VERSION: v0.33.0
+          KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+        run: |
+          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          echo "$KIND_SHA256  kind" | sha256sum -c -
+          sudo install -m 0755 kind /usr/local/bin/kind
+          kind version
 
       - name: Deploy the API and run the tests as a Job
         run: scripts/k8s_test.sh
