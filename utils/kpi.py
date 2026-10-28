@@ -281,7 +281,7 @@ def review(k: dict, history: list[list[dict]]) -> tuple[dict[str, list], list[di
             latency.append({"name": s["name"], "requests": s["requests"], "p50": s["p50_ms"],
                             "p90": s.get("p90_ms"), "p99": s["p99_ms"], "p999": s.get("p999_ms"),
                             "target": target, "series": series, "change": change, "status": status})
-            if regressed:
+            if regressed and target:            # scenarios without a latency SLO (the race check) aren't latency tests
                 callouts.append(callout(WARNING, f"{s['name']}: TP99 {change:+.0f}% vs its recent median",
                                         f"{s['p99_ms']:.1f} ms, still within its {target} ms SLO, but worth a look."))
     else:
