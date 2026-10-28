@@ -358,8 +358,9 @@ def links() -> dict:
 
 
 def context() -> dict:
+    now = datetime.now(timezone.utc)
     return {"run": os.getenv("GITHUB_RUN_NUMBER"), "commit": os.getenv("GITHUB_SHA", "")[:7],
-            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            "date": now.strftime("%Y-%m-%d %H:%M UTC"), "iso": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "pr": os.getenv("GITHUB_EVENT_NAME") == "pull_request"}
 
 
@@ -411,8 +412,6 @@ def to_markdown(sections: dict, latency: list, callouts: list, history: list) ->
             lines.append(f"| {MD_STATUS[s['status']]} | {s['name']} | {s['p99']:.1f} ms | "
                          f"{s['target'] or '-'}{' ms' if s['target'] else ''} | {used} | {trend} |")
         lines.append("")
-    lines.append("<sub>Not measured here: escaped defects, Sev-2 incidents and time to detect need production traffic; "
-                 "flaky-test rate needs reruns of the same commit. See the definitions for how each would be measured.</sub>")
     return "\n".join(lines) + "\n"
 
 
@@ -481,10 +480,10 @@ CSS = """
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --page: #f8fafc; --surface: #ffffff; --sunk: #f1f5f9; --hover: #f8fafc;
   --ink: #0f172a; --ink-2: #475569; --muted: #64748b; --line: #e2e8f0; --line-2: #f1f5f9;
-  --accent: #10b981; --accent-text: #047857; --accent-wash: #ecfdf5; --accent-line: #a7f3d0;
+  --accent: #0ea1a6; --accent-text: #04636c; --accent-wash: #ebfbfa; --accent-line: #a3e9e8;
   --baseline: #cbd5e1; --track: #f1f5f9;
-  --btn: #047857; --btn-hover: #065f46; --btn-ink: #ffffff;
-  --good: #047857; --warning: #b45309; --critical: #dc2626; --neutral: #64748b;
+  --btn: #04636c; --btn-hover: #055056; --btn-ink: #ffffff;
+  --good: #04636c; --warning: #b45309; --critical: #dc2626; --neutral: #64748b;
   --bad-wash: #fef2f2; --bad-line: #fecaca;
   --shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
 }
@@ -493,10 +492,10 @@ CSS = """
     color-scheme: dark;
     --page: #020617; --surface: #0f172a; --sunk: #1e293b; --hover: #162033;
     --ink: #f1f5f9; --ink-2: #cbd5e1; --muted: #94a3b8; --line: #1e293b; --line-2: #172033;
-    --accent: #0ea371; --accent-text: #34d399; --accent-wash: #052e22; --accent-line: #065f46;
+    --accent: #0d8f93; --accent-text: #2ac3c3; --accent-wash: #052629; --accent-line: #055056;
     --baseline: #475569; --track: #1e293b;
-    --btn: #10b981; --btn-hover: #34d399; --btn-ink: #022c22;
-    --good: #34d399; --warning: #fbbf24; --critical: #f87171; --neutral: #94a3b8;
+    --btn: #0ea1a6; --btn-hover: #2ac3c3; --btn-ink: #022328;
+    --good: #2ac3c3; --warning: #fbbf24; --critical: #f87171; --neutral: #94a3b8;
     --bad-wash: #2a1215; --bad-line: #7f1d1d;
     --shadow: none;
   }
@@ -505,10 +504,10 @@ CSS = """
   color-scheme: dark;
   --page: #020617; --surface: #0f172a; --sunk: #1e293b; --hover: #162033;
   --ink: #f1f5f9; --ink-2: #cbd5e1; --muted: #94a3b8; --line: #1e293b; --line-2: #172033;
-  --accent: #0ea371; --accent-text: #34d399; --accent-wash: #052e22; --accent-line: #065f46;
+  --accent: #0d8f93; --accent-text: #2ac3c3; --accent-wash: #052629; --accent-line: #055056;
   --baseline: #475569; --track: #1e293b;
-  --btn: #10b981; --btn-hover: #34d399; --btn-ink: #022c22;
-  --good: #34d399; --warning: #fbbf24; --critical: #f87171; --neutral: #94a3b8;
+  --btn: #0ea1a6; --btn-hover: #2ac3c3; --btn-ink: #022328;
+  --good: #2ac3c3; --warning: #fbbf24; --critical: #f87171; --neutral: #94a3b8;
   --bad-wash: #2a1215; --bad-line: #7f1d1d;
   --shadow: none;
 }
@@ -525,9 +524,9 @@ svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor;
 .side { background: var(--surface); padding: 20px; display: flex; flex-direction: column;
         position: sticky; top: 0; height: 100vh; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px 24px; }
-.brand .mark { width: 32px; height: 32px; border-radius: 8px; background: var(--accent); color: #fff; display: grid;
-               place-items: center; box-shadow: var(--shadow); }
-.brand .mark svg.i { width: 18px; height: 18px; stroke-width: 2.6; }
+/* the logo: a pass ring around a check, the same mark as the Allure report's (allure/plugin/static/styles.css) */
+.brand .mark { width: 32px; height: 32px; border-radius: 9px; display: block; box-shadow: var(--shadow); }
+.brand .mark svg { display: block; width: 100%; height: 100%; }
 .brand strong { display: block; font-size: 16px; font-weight: 700; line-height: 1.2; }
 .brand small { display: block; font-size: 12px; color: var(--muted); }
 .nav { display: flex; flex-direction: column; gap: 2px; }
@@ -560,8 +559,7 @@ svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor;
 .crumbs b { color: var(--ink-2); font-weight: 500; }
 h1 { font-family: var(--font); font-size: 24px; line-height: 1.25; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
 .actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.metapill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 8px; background: var(--surface);
-            border: 1px solid var(--line); box-shadow: var(--shadow); font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+.metapill { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); white-space: nowrap; }
 .metapill code { font-size: 12px; padding: 2px 6px; border-radius: 4px; background: var(--sunk); color: var(--ink); }
 .metapill .sep { color: var(--baseline); }
 .btn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 8px; font-size: 14px;
@@ -752,8 +750,6 @@ tr.more[hidden], tr.row[hidden] { display: none; }
 .sev .name { color: var(--ink-2); }
 .sev .n { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
 .bugs-list { margin-bottom: 16px; }
-footer { font-size: 12px; color: var(--muted); }
-footer a { color: var(--accent-text); }
 section[id], div[id] { scroll-margin-top: 16px; }
 
 #tip { position: fixed; pointer-events: none; z-index: 10; padding: 8px 10px; border-radius: 8px; background: #0f172a;
@@ -810,6 +806,13 @@ for (const el of document.querySelectorAll('[data-tip]')) {
   el.addEventListener('pointerleave', () => tip.style.opacity = 0);
   el.addEventListener('focus', () => { const r = el.getBoundingClientRect(); show(el, r.left + r.width / 2, r.top); });
   el.addEventListener('blur', () => tip.style.opacity = 0);
+}
+
+// the run's time, in the viewer's own time zone (the page is built in UTC, which stays as the fallback)
+for (const t of document.querySelectorAll('time[datetime]')) {
+  const d = new Date(t.dateTime);
+  if (!isNaN(d)) t.textContent = d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric',
+                                                    hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
 }
 
 // sidebar: highlight the link of the section in view (the last one whose top has scrolled past the top third)
@@ -988,12 +991,12 @@ def to_html(k: dict, sections: dict, latency: list, callouts: list, history: lis
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script>{THEME_BOOT}</script><style>{CSS}</style></head><body><div class="app">
 <aside class="side">
-  <div class="brand"><span class="mark"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+  <div class="brand"><span class="mark"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="qa-mark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#14b3b0"/><stop offset="1" stop-color="#0f253d"/></linearGradient></defs><rect width="32" height="32" rx="9" fill="url(#qa-mark)"/><circle cx="16" cy="16" r="9.5" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="2.4"/><path d="M16 6.5a9.5 9.5 0 1 1-8.6 5.45" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M11.8 16.3l3 3 5.6-6" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
     <div><strong>Quality</strong><small>QA Automation</small></div></div>
   <nav class="nav">
     <a class="on" href="#overview" data-spy>{icon("grid")}Overview</a>
-    <a href="#history" data-spy>{icon("history")}Runs &amp; Suites</a>
     <a href="#signals" data-spy>{icon("pulse")}Key Signals</a>
+    <a href="#history" data-spy>{icon("history")}Test Analytics</a>
     <a href="#metrics" data-spy>{icon("chart")}Metrics<span class="count">{len(rows)}</span></a>
     <a href="#latency" data-spy>{icon("gauge")}API Latency</a>
     <a href="#environment" data-spy>{icon("server")}Environment</a>
@@ -1010,7 +1013,7 @@ def to_html(k: dict, sections: dict, latency: list, callouts: list, history: lis
 <main class="main" id="overview"><div class="wrap">''')
 
     # ---- page header ----
-    meta = [f"<span>{esc(ctx['date'])}</span>"]
+    meta = [f'<time datetime="{ctx["iso"]}">{esc(ctx["date"])}</time>']
     if ctx["commit"]:
         meta.append(f"<code>{esc(ctx['commit'])}</code>")
     if ctx["run"]:
@@ -1063,32 +1066,6 @@ def to_html(k: dict, sections: dict, latency: list, callouts: list, history: lis
                     "Every suite passed" if green_suites == len(suite_list) else f"{len(suite_list) - green_suites} with failures"))
     out.append('</section>')
 
-    # ---- run history + suite breakdown ----
-    current = trend[-1] if trend else None
-    out.append(f'''<div class="pair"><section class="card panel" id="history">
-  <div class="section-title"><div><h2>Consistency Across Runs</h2>
-    <div class="subtitle">Tests passed per merge to main over the last {len(trend)} runs, from the published report's history.</div></div>
-    <span class="legend-dot"><i></i>Passed</span></div>
-  {history_chart(trend) if trend else ""}
-  <div class="panel-foot"><span>Latest result: <strong>{current["passed"] if current else "-"} passed</strong></span>
-    <a href="{esc(url["allure"])}#graph">Open Trend in Allure{icon("arrow")}</a></div>
-</section>''')
-    suite_rows = "".join(
-        f'''<div class="suite"><div class="row1"><span class="name">{icon(SUITE_INFO.get(s["key"], (s["key"], "code"))[1])}
-          <strong>{esc(SUITE_INFO.get(s["key"], (s["key"],))[0])}</strong><code>tests.{esc(s["key"])}</code></span>
-          <span class="n">{s["tests"]} tests</span></div>
-        <div class="bar" role="img" aria-label="{s["tests"] - s["failed"] - s["skipped"]} of {s["tests"]} passed"><span style="width:{pct(s["tests"] - s["failed"] - s["skipped"], s["tests"], 1)}%"></span></div>
-        <div class="row3">{suite_status(s)}<span>{s["seconds"]:.1f} s{f" · {s['skipped']} skipped" if s["skipped"] else ""}</span></div></div>'''
-        for s in suite_list)
-    out.append(f'''<section class="card panel" id="suites">
-  <div class="section-title"><div><h2>Test Suite Breakdown</h2>
-    <div class="subtitle">{total} checks across {len(suite_list)} layers of confidence.</div></div><span class="pill">{len(suite_list)} suites</span></div>
-  <div class="suites">{suite_rows}</div>
-  <div class="panel-foot">{status(GOOD if green_suites == len(suite_list) else CRITICAL).replace(
-      LABELS[GOOD if green_suites == len(suite_list) else CRITICAL], "All Suites Passed" if green_suites == len(suite_list) else "Failures")}
-    <a href="{esc(url["allure"])}#suites">View Detailed Report{icon("arrow")}</a></div>
-</section></div>''')
-
     # ---- key signals ----
     out.append('<div class="section-label" id="signals"><h2>Key Signals</h2><span class="meta">Compared with your goals</span></div>'
                '<section class="signals" aria-label="Key signals">')
@@ -1120,6 +1097,32 @@ def to_html(k: dict, sections: dict, latency: list, callouts: list, history: lis
         out.append(signal("Change Failure Rate", "branch", m["value"].rstrip("%"), "%",
                           f'{ops["failed"]} of {ops["runs"]} merges broke main', m))
     out.append('</section>')
+    # ---- run history + suite breakdown ----
+    current = trend[-1] if trend else None
+    out.append(f'''<div class="pair"><section class="card panel" id="history">
+  <div class="section-title"><div><h2>Consistency Across Runs</h2>
+    <div class="subtitle">Tests passed on each merge to main, last {len(trend)} runs.</div></div>
+    <span class="legend-dot"><i></i>Passed</span></div>
+  {history_chart(trend) if trend else ""}
+  <div class="panel-foot"><span>Latest result: <strong>{current["passed"] if current else "-"} passed</strong></span>
+    <a href="{esc(url["allure"])}#graph">Open Trend in Allure{icon("arrow")}</a></div>
+</section>''')
+    suite_rows = "".join(
+        f'''<div class="suite"><div class="row1"><span class="name">{icon(SUITE_INFO.get(s["key"], (s["key"], "code"))[1])}
+          <strong>{esc(SUITE_INFO.get(s["key"], (s["key"],))[0])}</strong><code>tests.{esc(s["key"])}</code></span>
+          <span class="n">{s["tests"]} tests</span></div>
+        <div class="bar" role="img" aria-label="{s["tests"] - s["failed"] - s["skipped"]} of {s["tests"]} passed"><span style="width:{pct(s["tests"] - s["failed"] - s["skipped"], s["tests"], 1)}%"></span></div>
+        <div class="row3">{suite_status(s)}<span>{s["seconds"]:.1f} s{f" · {s['skipped']} skipped" if s["skipped"] else ""}</span></div></div>'''
+        for s in suite_list)
+    out.append(f'''<section class="card panel" id="suites">
+  <div class="section-title"><div><h2>Test Suite Breakdown</h2>
+    <div class="subtitle">{total} tests across {len(suite_list)} suites.</div></div><span class="pill">{len(suite_list)} suites</span></div>
+  <div class="suites">{suite_rows}</div>
+  <div class="panel-foot">{status(GOOD if green_suites == len(suite_list) else CRITICAL).replace(
+      LABELS[GOOD if green_suites == len(suite_list) else CRITICAL], "All Suites Passed" if green_suites == len(suite_list) else "Failures")}
+    <a href="{esc(url["allure"])}#suites">View Detailed Report{icon("arrow")}</a></div>
+</section></div>''')
+
     return to_html_rest(out, k, sections, latency, history, by_key, rows, login, cov, bugs_, env, run_label, url)
 
 
@@ -1206,7 +1209,7 @@ def to_html_rest(out, k, sections, latency, history, by_key, rows, login, cov, b
     options = "".join(f'<option value="{s}">{LABELS[s]}</option>' for s in (GOOD, WARNING, CRITICAL, NONE))
     out.append(f'''<section class="card" id="metrics">
   <div class="detail-head"><div><h2>All Metrics</h2>
-    <div class="subtitle">The evidence behind the overview. Open a row to see where its number comes from.</div></div>
+    <div class="subtitle">Open a row to see how it's measured.</div></div>
     <div class="filters"><label class="search">{icon("search")}<input id="q" type="search" placeholder="Search metrics…" aria-label="Search metrics"></label>
       <select id="status" aria-label="Filter by status"><option value="all">All Statuses</option>{options}</select></div></div>
   <div class="tabs" role="tablist">
@@ -1230,7 +1233,7 @@ def to_html_rest(out, k, sections, latency, history, by_key, rows, login, cov, b
             f'<div class="val">{s["p99"]:.1f} ms <span>/ {s["target"]} ms</span></div></div>' for s in timed)
         out.append(f'''<section class="card panel" id="latency">
   <div><h2>API Latency vs SLO</h2>
-  <div class="subtitle">TP99 as a share of each API's SLO; a full bar is right at the limit. Hover for TP50 and TP90.</div></div>
+  <div class="subtitle">TP99 response time against each API's target. Hover a bar for TP50 and TP90.</div></div>
   <div class="lat-list">{lat_rows}</div>
   <div class="lat-axis"><div></div><div><span>0%</span><span>50%</span><span>100% of SLO</span></div><div></div></div>
 </section>''')
@@ -1270,17 +1273,13 @@ def to_html_rest(out, k, sections, latency, history, by_key, rows, login, cov, b
     env_card = lambda title, sub, ico, rows: f'''<section class="card panel">
     <div class="section-title"><div><h2>{title}</h2><div class="subtitle">{sub}</div></div><span class="ic-muted">{icon(ico)}</span></div>
     <dl class="env">{"".join(f"<dt>{a}</dt><dd>{b}</dd>" for a, b in rows)}</dl></section>'''
-    out.append(f'''<div class="section-label" id="environment"><h2>Environment</h2>
-  <span class="meta">Runtime parameters and infrastructure configuration</span></div>
+    out.append(f'''<div class="section-label" id="environment"><h2>Environment</h2></div>
 <div class="pair even">
   {env_card("Runtime &amp; Test Configuration", "What was tested, and how.", "flask", runtime_rows)}
   {env_card("Infrastructure &amp; Tooling", "Where it ran, and what powered the build.", "server", infra_rows)}
 </div>''')
 
-    out.append(f'''<footer>Not measured here, and why: escaped defects, Sev-2 incidents and time to detect need production
-traffic and an incident tracker; flaky-test rate needs reruns of the same commit.
-<a href="{esc(url["definitions"])}">The definitions</a> say how each would be measured.</footer>
-</div></main></div><div id="tip" role="tooltip"></div><script>{JS}</script></body></html>''')
+    out.append(f'''</div></main></div><div id="tip" role="tooltip"></div><script>{JS}</script></body></html>''')
     return "\n".join(out)
 
 

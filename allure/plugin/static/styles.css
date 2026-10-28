@@ -1,9 +1,10 @@
 /* Styles for the Allure report, loaded on every page by this project's Allure plugin (allure/plugin, enabled in
    .github/workflows/tests.yml, "Build the report"). Allure's dark theme sets data-theme="dark" on <html>. */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 
-/* Logo: this project's mark (the same green pulse as the QA dashboard) instead of Allure's */
+/* Logo: this project's mark (a pass ring around a check, the same as the QA dashboard's) instead of Allure's */
 .side-nav__brand-icon {
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2312382c'/%3E%3Cpath d='M6 16h5l3.3-8 5.4 16 3.3-8H26' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat left center !important;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='qa-mark' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2314b3b0'/%3E%3Cstop offset='1' stop-color='%230f253d'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='9' fill='url(%23qa-mark)'/%3E%3Ccircle cx='16' cy='16' r='9.5' fill='none' stroke='%23fff' stroke-opacity='.28' stroke-width='2.4'/%3E%3Cpath d='M16 6.5a9.5 9.5 0 1 1-8.6 5.45' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/%3E%3Cpath d='M11.8 16.3l3 3 5.6-6' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat left center !important;
   background-size: contain !important;
 }
 
@@ -24,58 +25,149 @@
 .test-result-overview__tags .label.label__info {
   display: inline-block; margin: 0 4px 0 2px; padding: 3px 10px; border-radius: 999px;
   font-size: 12px; font-weight: 600; line-height: 1.3;
-  background: #e6f3ee; color: #0b6b49; border: 1px solid #bfe0d2;
+  background: #ebfbfa; color: #04636c; border: 1px solid #a3e9e8;
 }
 .test-result-overview__tags .pane__section:has([data-tooltip]) > span {
   display: inline-flex; align-items: center; gap: 6px; padding: 3px 12px; border-radius: 999px;
-  background: #f1f3f2; border: 1px solid #e1e5e3; font-weight: 600; font-variant-numeric: tabular-nums;
+  background: #f1f5f9; border: 1px solid #e2e8f0; font-weight: 600; font-variant-numeric: tabular-nums;
 }
-[data-theme="dark"] .test-result-overview__tags .label.label__info { background: #15302a; color: #4cc497; border-color: #24503f; }
-[data-theme="dark"] .test-result-overview__tags .pane__section:has([data-tooltip]) > span { background: #1f2524; border-color: #2c3432; }
+[data-theme="dark"] .test-result-overview__tags .label.label__info { background: #052629; color: #2ac3c3; border-color: #055056; }
+[data-theme="dark"] .test-result-overview__tags .pane__section:has([data-tooltip]) > span { background: #1e293b; border-color: #334155; }
 
 /* Categories: the empty state index.js builds when there is nothing to show */
 .qa-empty { padding: 40px 28px; max-width: 520px; }
 .qa-empty__badge { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; margin-bottom: 16px;
-                   background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+                   background: #ebfbfa; color: #04636c; border: 1px solid #a3e9e8; }
 .qa-empty__badge svg { width: 22px; height: 22px; }
 .qa-empty__badge_neutral { background: #f1f5f9; color: #64748b; border-color: #e2e8f0; }
 .qa-empty h3 { margin: 0 0 6px; font-size: 17px; font-weight: 600; }
 .qa-empty p { margin: 0 0 18px; font-size: 14px; line-height: 1.55; opacity: 0.8; }
 .qa-empty__cta { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px;
-                 background: #047857; color: #fff !important; font-size: 14px; font-weight: 600; text-decoration: none; }
-.qa-empty__cta:hover { background: #065f46; }
-[data-theme="dark"] .qa-empty__badge { background: #052e22; color: #34d399; border-color: #065f46; }
+                 background: #04636c; color: #fff !important; font-size: 14px; font-weight: 600; text-decoration: none; }
+.qa-empty__cta:hover { background: #055056; }
+[data-theme="dark"] .qa-empty__badge { background: #052629; color: #2ac3c3; border-color: #055056; }
 [data-theme="dark"] .qa-empty__badge_neutral { background: #1e293b; color: #94a3b8; border-color: #334155; }
-[data-theme="dark"] .qa-empty__cta { background: #10b981; color: #022c22 !important; }
-[data-theme="dark"] .qa-empty__cta:hover { background: #34d399; }
+[data-theme="dark"] .qa-empty__cta { background: #0ea1a6; color: #022328 !important; }
+[data-theme="dark"] .qa-empty__cta:hover { background: #2ac3c3; }
 /* with zero failures there is nothing to sort, filter or search: hide those controls */
 .qa-categories-clear .tree__ctrl, .qa-categories-clear .pane__search,
 .qa-categories-clear .pane__controls { display: none !important; }   /* Allure's own rule for the title icons wins otherwise */
 
-/* One green across the report and the QA dashboard: Allure's bright green and violet highlight become the
-   dashboard's emerald (#10b981 marks, #047857 text; dark: #0ea371 marks, #34d399 text). Only "passed",
-   "success" and the active/primary highlight change: "unknown" keeps Allure's violet, so it never looks passed.
-   Allure loads its own stylesheet after this one and defines these on :root:not([data-theme="dark"]); a tie
-   goes to the later sheet, so these selectors are one step more specific than Allure's. */
+/* The QA dashboard's colors (utils/kpi.py, :root tokens) across the report: its slate page, surfaces, text and
+   lines; its teal for "passed", "success", links and the active/primary highlight (#0ea1a6 marks, #04636c text;
+   dark: #0d8f93 marks, #2ac3c3 text); its red for "failed", amber for "broken" and slate for "skipped".
+   "unknown" keeps Allure's violet, so it never looks passed. Allure loads its own stylesheet after this one and
+   defines these on :root:not([data-theme="dark"]); a tie goes to the later sheet, so these selectors are one step
+   more specific than Allure's. */
 :root:root:not([data-theme="dark"]) {
-  --color-status-passed-bg: #059669; --color-status-passed-border: #10b981; --color-status-passed-text: #047857;
-  --color-status-passed-chart: #059669; --color-status-passed-chart-fill: #10b981; --color-status-passed-bg-subtle: rgba(16, 185, 129, 0.14);
-  --color-intent-success-bg: #059669; --color-intent-success-bg-hover: #047857; --color-intent-success-bg-active: #065f46;
-  --color-intent-success-bg-subtle: rgba(16, 185, 129, 0.08); --color-intent-success-bg-subtle-hover: rgba(16, 185, 129, 0.14);
-  --color-intent-success-bg-subtle-active: rgba(16, 185, 129, 0.2); --color-intent-success-text: #047857; --color-intent-success-border: #047857;
-  --color-intent-primary-bg: #047857; --color-intent-primary-bg-hover: #065f46; --color-intent-primary-bg-active: #064e3b;
-  --color-intent-primary-text: #047857;
-  --color-nav-item-bg-active: rgba(16, 185, 129, 0.12); --color-nav-item-bg-active-hover: rgba(16, 185, 129, 0.18);
-  --color-nav-item-text-active: #047857; --color-nav-item-icon-active: #047857; --color-sorter-fg-active: #047857;
+  --color-bg-canvas: #f8fafc; --color-bg-primary: #ffffff; --color-bg-secondary: #f8fafc; --color-bg-raised: #ffffff;
+  --color-bg-neutral: #cbd5e1; --color-bg-inverse-primary: #0f172a; --color-bg-inverse-raised: #1e293b;
+  --color-text-primary: #0f172a; --color-text-secondary: #475569; --color-text-muted: #64748b;
+  --color-icon-primary: #475569; --color-icon-secondary: #64748b; --color-icon-muted: #94a3b8;
+  --color-border-subtle: #f1f5f9; --color-border-default: #e2e8f0; --color-border-medium: #cbd5e1;
+  --color-border-control: #cbd5e1; --color-border-strong: #64748b; --color-focus-ring: #0ea1a6;
+  --color-control-bg: #f1f5f9; --color-control-bg-hover: #e2e8f0; --color-control-bg-active: #cbd5e1;
+  --color-control-bg-ghost-hover: #f1f5f9; --color-control-bg-ghost-active: #e2e8f0; --color-scrollbar: #cbd5e1;
+  --color-nav-item-bg-hover: #f1f5f9; --color-nav-item-bg-active: #ebfbfa; --color-nav-item-bg-active-hover: #dcf6f5;
+  --color-nav-item-text-active: #04636c; --color-nav-item-icon-active: #04636c;
+  --color-row-bg-hover: #f8fafc; --color-row-bg-selected: #ebfbfa; --color-row-bg-selected-hover: #dcf6f5;
+  --color-sorter-fg-active: #04636c; --color-tag-default-bg: #f1f5f9; --color-tag-default-text: #0f172a;
+  --color-tag-secondary-bg: #f8fafc; --color-tag-secondary-text: #0f172a; --color-dashboard-neutral: #cbd5e1;
+  --color-link-text: #04636c; --color-link-text-hover: #055056; --color-link-text-active: #053f46;
+  --color-intent-primary-bg: #04636c; --color-intent-primary-bg-hover: #055056; --color-intent-primary-bg-active: #053f46;
+  --color-intent-primary-text: #04636c;
+  --color-intent-success-bg: #058087; --color-intent-success-bg-hover: #04636c; --color-intent-success-bg-active: #055056;
+  --color-intent-success-bg-subtle: rgba(14, 161, 166, 0.08); --color-intent-success-bg-subtle-hover: rgba(14, 161, 166, 0.14);
+  --color-intent-success-bg-subtle-active: rgba(14, 161, 166, 0.2); --color-intent-success-text: #04636c; --color-intent-success-border: #04636c;
+  --color-intent-danger-bg: #dc2626; --color-intent-danger-bg-hover: #b91c1c; --color-intent-danger-bg-active: #991b1b;
+  --color-intent-danger-bg-subtle: #fef2f2; --color-intent-danger-text: #dc2626; --color-intent-danger-border: #dc2626;
+  --color-intent-warning-bg: #f59e0b; --color-intent-warning-bg-subtle: #fffbeb; --color-intent-warning-text: #b45309;
+  --color-intent-warning-border: #b45309;
+  --color-status-passed-on-bg: #ffffff; --color-status-failed-on-bg: #ffffff;
+  --color-chart-categorical-3: #1e5a6b;   /* the Duration chart: deep navy-teal, so timing never reads as "passed" */
+  --color-status-passed-bg: #058087; --color-status-passed-border: #0ea1a6; --color-status-passed-text: #04636c;
+  --color-status-passed-chart: #058087; --color-status-passed-chart-fill: #0ea1a6; --color-status-passed-bg-subtle: rgba(14, 161, 166, 0.14);
+  --color-status-failed-bg: #dc2626; --color-status-failed-border: #f87171; --color-status-failed-text: #dc2626;
+  --color-status-failed-chart: #dc2626; --color-status-failed-chart-fill: #ef4444; --color-status-failed-bg-subtle: #fef2f2;
+  --color-status-broken-bg: #f59e0b; --color-status-broken-border: #f59e0b; --color-status-broken-text: #b45309;
+  --color-status-broken-chart: #b45309; --color-status-broken-chart-fill: #f59e0b; --color-status-broken-bg-subtle: #fffbeb;
+  --color-status-skipped-bg: #94a3b8; --color-status-skipped-border: #94a3b8; --color-status-skipped-text: #64748b;
+  --color-status-skipped-chart: #64748b; --color-status-skipped-chart-fill: #94a3b8; --color-status-skipped-bg-subtle: #f1f5f9;
 }
 :root:root[data-theme="dark"]:not(:empty) {
-  --color-status-passed-bg: #0ea371; --color-status-passed-border: #0ea371; --color-status-passed-text: #34d399;
-  --color-status-passed-chart: #0ea371; --color-status-passed-chart-fill: #0ea371; --color-status-passed-bg-subtle: rgba(16, 185, 129, 0.18);
-  --color-intent-success-bg: #0ea371; --color-intent-success-bg-hover: #10b981; --color-intent-success-bg-active: #059669;
-  --color-intent-success-bg-subtle: rgba(16, 185, 129, 0.12); --color-intent-success-bg-subtle-hover: rgba(16, 185, 129, 0.18);
-  --color-intent-success-bg-subtle-active: rgba(16, 185, 129, 0.24); --color-intent-success-text: #34d399; --color-intent-success-border: #34d399;
-  --color-intent-primary-bg: #10b981; --color-intent-primary-bg-hover: #34d399; --color-intent-primary-bg-active: #059669;
-  --color-intent-primary-text: #34d399;
-  --color-nav-item-bg-active: rgba(16, 185, 129, 0.14); --color-nav-item-bg-active-hover: rgba(16, 185, 129, 0.2);
-  --color-nav-item-text-active: #34d399; --color-nav-item-icon-active: #34d399; --color-sorter-fg-active: #34d399;
+  --color-bg-canvas: #020617; --color-bg-primary: #0f172a; --color-bg-secondary: #020617; --color-bg-raised: #0f172a;
+  --color-bg-neutral: #475569; --color-bg-inverse-primary: #f1f5f9; --color-bg-inverse-raised: #e2e8f0;
+  --color-text-primary: #f1f5f9; --color-text-secondary: #cbd5e1; --color-text-muted: #94a3b8;
+  --color-icon-primary: #cbd5e1; --color-icon-secondary: #94a3b8; --color-icon-muted: #64748b;
+  --color-border-subtle: #172033; --color-border-default: #1e293b; --color-border-medium: #334155;
+  --color-border-control: #334155; --color-border-strong: #94a3b8; --color-focus-ring: #2ac3c3;
+  --color-control-bg: #1e293b; --color-control-bg-hover: #334155; --color-control-bg-active: #475569;
+  --color-control-bg-ghost-hover: #1e293b; --color-control-bg-ghost-active: #334155; --color-scrollbar: #334155;
+  --color-nav-item-bg-hover: #1e293b; --color-nav-item-bg-active: #052629; --color-nav-item-bg-active-hover: #063237;
+  --color-nav-item-text-active: #2ac3c3; --color-nav-item-icon-active: #2ac3c3;
+  --color-row-bg-hover: #162033; --color-row-bg-selected: #052629; --color-row-bg-selected-hover: #063237;
+  --color-sorter-fg-active: #2ac3c3; --color-tag-default-bg: #1e293b; --color-tag-default-text: #f1f5f9;
+  --color-tag-secondary-bg: #162033; --color-tag-secondary-text: #f1f5f9; --color-dashboard-neutral: #475569;
+  --color-link-text: #2ac3c3; --color-link-text-hover: #5fd6d6; --color-link-text-active: #0ea1a6;
+  --color-intent-primary-bg: #0ea1a6; --color-intent-primary-bg-hover: #2ac3c3; --color-intent-primary-bg-active: #0d8f93;
+  --color-intent-primary-text: #2ac3c3; --color-intent-primary-on-bg: #022328;
+  --color-intent-success-bg: #0d8f93; --color-intent-success-bg-hover: #0ea1a6; --color-intent-success-bg-active: #058087;
+  --color-intent-success-bg-subtle: rgba(14, 161, 166, 0.12); --color-intent-success-bg-subtle-hover: rgba(14, 161, 166, 0.18);
+  --color-intent-success-bg-subtle-active: rgba(14, 161, 166, 0.24); --color-intent-success-text: #2ac3c3; --color-intent-success-border: #2ac3c3;
+  --color-intent-danger-bg: #f87171; --color-intent-danger-bg-hover: #fca5a5; --color-intent-danger-bg-active: #ef4444;
+  --color-intent-danger-bg-subtle: #2a1215; --color-intent-danger-text: #f87171; --color-intent-danger-border: #f87171;
+  --color-intent-danger-on-bg: #2a1215;
+  --color-intent-warning-bg: #fbbf24; --color-intent-warning-bg-subtle: rgba(251, 191, 36, 0.12); --color-intent-warning-text: #fbbf24;
+  --color-intent-warning-border: #fbbf24;
+  --color-status-passed-on-bg: #022328;
+  --color-chart-categorical-3: #5fa9bb;
+  --color-status-passed-bg: #0d8f93; --color-status-passed-border: #0d8f93; --color-status-passed-text: #2ac3c3;
+  --color-status-passed-chart: #0d8f93; --color-status-passed-chart-fill: #0d8f93; --color-status-passed-bg-subtle: rgba(14, 161, 166, 0.18);
+  --color-status-failed-bg: #f87171; --color-status-failed-border: #f87171; --color-status-failed-text: #f87171;
+  --color-status-failed-chart: #f87171; --color-status-failed-chart-fill: #ef4444; --color-status-failed-bg-subtle: #2a1215;
+  --color-status-failed-on-bg: #2a1215;
+  --color-status-broken-bg: #fbbf24; --color-status-broken-border: #fbbf24; --color-status-broken-text: #fbbf24;
+  --color-status-broken-chart: #fbbf24; --color-status-broken-chart-fill: #f59e0b; --color-status-broken-bg-subtle: rgba(251, 191, 36, 0.12);
+  --color-status-skipped-bg: #64748b; --color-status-skipped-border: #64748b; --color-status-skipped-text: #94a3b8;
+  --color-status-skipped-chart: #94a3b8; --color-status-skipped-chart-fill: #64748b; --color-status-skipped-bg-subtle: #1e293b;
 }
+
+/* The QA dashboard's type, cards and spacing: Inter, white cards with a hairline border and 12px corners, 24px
+   gutters, quiet headers, and full-width rows. ".app" makes each rule one step more specific than Allure's own. */
+:root:root { --font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif; --radius-1: 12px;
+             --shadow-small: 0 1px 2px rgba(15, 23, 42, 0.05); }
+:root:root[data-theme="dark"] { --shadow-small: none; }
+body { -webkit-font-smoothing: antialiased; font-feature-settings: "cv11", "ss01"; }
+
+/* overview widgets */
+.app .widgets-grid { gap: 24px; padding: 32px 32px 64px; }
+.app .widget { margin-bottom: 24px; }
+.app .widget__handle { display: none !important; }      /* dragging widgets around isn't something a reader needs */
+.app .island { border-color: var(--color-border-default); padding: 24px 0 8px; overflow: hidden; }
+.app .widget__title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin: 0 24px 16px;
+                      font-size: 16px; font-weight: 600; line-height: 1.4; letter-spacing: -0.01em; }
+.app .widget__subtitle { font-size: 12px; font-weight: 500; color: var(--color-text-muted); }
+.app .widget__flex-line { padding: 0 24px 16px; }
+.app .widget__flex-line .widget__title { display: block; margin: 0; }
+.app .widget__flex-line .widget__subtitle { margin-top: 4px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.app .splash__title { font-size: 44px; font-weight: 700; line-height: 1.1; letter-spacing: -0.03em;
+                      color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
+.app .splash__subtitle { margin-top: 4px; font-size: 13px; font-weight: 500; }
+
+/* widget rows: name, then a rounded bar with the count inside it */
+.app .widget__table { margin-inline: 0; border-top: 0; }
+.app .widget__table .table__row { align-items: center; border-top: 1px solid var(--color-border-subtle); border-bottom: 0; }
+.app .widget__table .table__col { padding: 12px 24px; font-size: 14px; }
+.app .widget__table .table__col:first-child:not(.table__col_center) { font-weight: 500; }
+.app .bar { height: 20px; border-radius: 999px; background: var(--color-control-bg); }
+.app .bar__fill { height: 20px; line-height: 20px; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+/* "Show all" as a link; empty states as quiet text */
+.app a.table__row .table__col_center { padding: 14px 24px 8px; font-size: 13px; font-weight: 600; color: var(--color-link-text); }
+.app a.table__row .table__col_center::first-letter { text-transform: uppercase; }
+.app a.table__row:has(.table__col_center):hover { background: none; }
+.app a.table__row:has(.table__col_center):hover .table__col_center { color: var(--color-link-text-hover); text-decoration: underline; }
+.app div.table__row .table__col_center, .app .widget__noitems { padding: 16px 24px 20px; font-size: 13px; color: var(--color-text-muted); }
+
+/* sidebar */
+.app .side-nav__link { border-radius: 8px; font-size: 14px; font-weight: 500; }
+.app .side-nav__brand-text { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
