@@ -351,8 +351,9 @@ def links() -> dict:
     repo = os.getenv("GITHUB_REPOSITORY", DEFAULT_REPOSITORY)
     owner, name = repo.split("/")
     server = os.getenv("GITHUB_SERVER_URL", "https://github.com")
-    run = os.getenv("GITHUB_RUN_ID")
+    run, sha = os.getenv("GITHUB_RUN_ID"), os.getenv("GITHUB_SHA")
     return {"repo": f"{server}/{repo}", "run": f"{server}/{repo}/actions/runs/{run}" if run else None,
+            "commit": f"{server}/{repo}/commit/{sha}" if sha else None,
             "dashboard": f"https://{owner}.github.io/{name}/", "allure": f"https://{owner}.github.io/{name}/report/",
             "definitions": f"{server}/{repo}/blob/main/docs/KPIs.md"}
 
@@ -559,9 +560,12 @@ svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor;
 .crumbs b { color: var(--ink-2); font-weight: 500; }
 h1 { font-family: var(--font); font-size: 24px; line-height: 1.25; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
 .actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.metapill { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); white-space: nowrap; }
-.metapill code { font-size: 12px; padding: 2px 6px; border-radius: 4px; background: var(--sunk); color: var(--ink); }
-.metapill .sep { color: var(--baseline); }
+.runmeta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+.runmeta a { color: var(--ink-2); text-decoration: none; }
+.runmeta a:hover { color: var(--accent-text); text-decoration: underline; }
+.runmeta code { font-family: var(--mono); font-size: 12px; }
+.runmeta .ext { margin-left: 2px; font-size: 11px; color: var(--muted); }
+.runmeta .sep { color: var(--baseline); }
 .btn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 8px; font-size: 14px;
        font-weight: 500; background: var(--surface); color: var(--ink); border: 1px solid var(--line); box-shadow: var(--shadow); }
 .btn svg.i { color: var(--muted); }
@@ -777,7 +781,6 @@ section[id], div[id] { scroll-margin-top: 16px; }
   th.goal, td.goal, th.chev, td.chev { display: none; }
   .search input { width: 130px; }
   .env { grid-template-columns: 1fr; } .env dt { padding-bottom: 0; border-bottom: 0; } .env dd { padding-top: 2px; }
-  .metapill { white-space: normal; }
   .bars { grid-template-columns: 1fr auto; }
   .bars .track, .ticks { grid-column: 1 / -1; }
   .lat, .lat-axis { grid-template-columns: 1fr auto; }
@@ -1013,18 +1016,19 @@ def to_html(k: dict, sections: dict, latency: list, callouts: list, history: lis
 <main class="main" id="overview"><div class="wrap">''')
 
     # ---- page header ----
-    meta = [f'<time datetime="{ctx["iso"]}">{esc(ctx["date"])}</time>']
+    # one line under the title: when it ran, and links to the exact code and the CI run
+    link = lambda href, text: f'<a href="{esc(href)}">{text}<span class="ext">↗</span></a>' if href else text
+    meta = [f'<span>Last run <time datetime="{ctx["iso"]}">{esc(ctx["date"])}</time></span>']
     if ctx["commit"]:
-        meta.append(f"<code>{esc(ctx['commit'])}</code>")
+        meta.append(link(url["commit"], f"commit <code>{esc(ctx['commit'])}</code>"))
     if ctx["run"]:
-        meta.append(f"<span>{esc(run_label)}</span>")
+        meta.append(link(url["run"], esc(run_label)))
     if ctx["pr"]:
-        meta.append("<span>pull request: ⅓ of main's load</span>")
+        meta.append("pull request: ⅓ of main's load")
     out.append(f'''<header class="pagehead"><div><nav class="crumbs" aria-label="Breadcrumb">QA Automation<span>/</span><b>Overview</b></nav>
-  <h1>Quality Overview</h1></div>
-  <div class="actions"><span class="metapill">{'<span class="sep">•</span>'.join(meta)}</span>
-    {f'<a class="btn" href="{esc(url["run"])}">{icon("file")}Run Details</a>' if url["run"] else ""}
-    <a class="btn primary" href="kpi.json" download>{icon("download")}Export Data</a></div></header>''')
+  <h1>Quality Overview</h1>
+  <p class="runmeta">{'<span class="sep">·</span>'.join(meta)}</p></div>
+  <div class="actions"><a class="btn primary" href="kpi.json" download>{icon("download")}Export Data</a></div></header>''')
 
     # ---- run status ----
     if not suite_list:
