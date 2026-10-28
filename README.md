@@ -278,7 +278,8 @@ deletes it: the same test image as everywhere else, pointed at a different addre
 
 **Security controls**
 - **No AWS keys in GitHub.** CI signs in with GitHub's OIDC token for short-lived credentials. The role
-  (`infra/aws-setup.yml`) trusts only `main` of this repository, so pull requests and forks can't use it.
+  (`infra/aws-setup.yml`) trusts only `main` of this repository, so pull requests and forks can't use it, and it
+  matches GitHub's immutable subject (owner and repository IDs), so a recreated repository with the same name can't.
 - **Least privilege.** The role can create and delete `qa-env-*` stacks, launch only `t2/t3.micro` in one region,
   and delete only resources tagged `project=qa-env`.
 - **Not public.** Port 5050 is open to the CI runner's IP address only; the instance requires IMDSv2.

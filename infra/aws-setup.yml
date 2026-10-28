@@ -14,10 +14,13 @@ Parameters:
     Type: Number
     Default: 5
     Description: Alert threshold in USD per month. A budget only sends emails; it never stops or blocks anything.
-  GitHubRepository:
+  GitHubSubjectPrefix:
     Type: String
-    Default: ai-musician/qa-automation-framework
-    Description: owner/repository allowed to assume the role
+    Default: repo:ai-musician@220680937/qa-automation-framework@1427557486
+    Description: >
+      The repository part of GitHub's OIDC subject, exactly as GitHub sends it. This repository uses immutable
+      subjects (owner and repository IDs, not just names), so a deleted and recreated repository with the same
+      name can't use this role. Look it up with: gh api repos/OWNER/REPO/actions/oidc/customization/sub
   CreateGitHubOIDCProvider:
     Type: String
     Default: "true"
@@ -83,7 +86,7 @@ Resources:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
                 # only runs on main of this repository; pull requests and forks can't assume it
                 # (a job that declares an "environment:" has a different subject and is refused too)
-                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepository}:ref:refs/heads/main
+                token.actions.githubusercontent.com:sub: !Sub ${GitHubSubjectPrefix}:ref:refs/heads/main
       Policies:
         - PolicyName: qa-environment-only
           PolicyDocument:
