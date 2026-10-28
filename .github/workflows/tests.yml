@@ -189,7 +189,7 @@ jobs:
       ALLURE_VERSION: "2.46.1"
       SITE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
     steps:
-      - uses: actions/checkout@v7     # for allure/report.css
+      - uses: actions/checkout@v7     # for allure/plugin
 
       - name: Download functional results
         uses: actions/download-artifact@v8
@@ -257,11 +257,9 @@ jobs:
           curl -sSfL -o allure.tgz \
             "https://github.com/allure-framework/allure2/releases/download/$ALLURE_VERSION/allure-$ALLURE_VERSION.tgz"
           tar xzf allure.tgz
-          # our logo and styles (allure/report.css), loaded through Allure's own custom-logo plugin
-          plugin="allure-$ALLURE_VERSION/plugins/custom-logo-plugin"
-          test -d "$plugin/static" || { echo "::error::custom-logo-plugin not found in Allure $ALLURE_VERSION"; exit 1; }
-          cp allure/report.css "$plugin/static/styles.css"
-          echo "  - custom-logo-plugin" >> "allure-$ALLURE_VERSION/config/allure.yml"
+          # this project's Allure plugin (allure/plugin): logo, styles, and the Categories empty state
+          cp -r allure/plugin "allure-$ALLURE_VERSION/plugins/qa-report-plugin"
+          echo "  - qa-report-plugin" >> "allure-$ALLURE_VERSION/config/allure.yml"
           # the site: the KPI dashboard (utils/kpi.py) is the landing page, the Allure report is at /report/
           "allure-$ALLURE_VERSION/bin/allure" generate results -o site/report --clean
           if [ -f reports/kpi/kpi.html ]; then

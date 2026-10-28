@@ -1,6 +1,5 @@
-/* Styles for the Allure report. CI copies this file over the custom-logo plugin's styles.css and enables the
-   plugin (.github/workflows/tests.yml, "Build the report"), so Allure loads it on every page. Allure's dark theme
-   sets data-theme="dark" on <html>. */
+/* Styles for the Allure report, loaded on every page by this project's Allure plugin (allure/plugin, enabled in
+   .github/workflows/tests.yml, "Build the report"). Allure's dark theme sets data-theme="dark" on <html>. */
 
 /* Logo: this project's mark (the same green pulse as the QA dashboard) instead of Allure's */
 .side-nav__brand-icon {
@@ -34,13 +33,20 @@
 [data-theme="dark"] .test-result-overview__tags .label.label__info { background: #15302a; color: #4cc497; border-color: #24503f; }
 [data-theme="dark"] .test-result-overview__tags .pane__section:has([data-tooltip]) > span { background: #1f2524; border-color: #2c3432; }
 
-/* Categories lists only failed and broken tests, so on a green run it is empty: say why, instead of Allure's bare
-   "There are no items". Only on this page (other trees use the same empty element), and true whatever the filters. */
-body:has(.side-nav__link_active[data-tab="categories"]) .tree__empty { font-size: 0; padding: 22px 24px; }
-body:has(.side-nav__link_active[data-tab="categories"]) .tree__empty::before {
-  content: "No failed or broken tests to show"; display: block; font-size: 16px; font-weight: 600; margin-bottom: 6px;
-}
-body:has(.side-nav__link_active[data-tab="categories"]) .tree__empty::after {
-  content: "Categories lists only failures, sorted into product defects (the product did something wrong) and test defects (the test itself broke). Every test is under Suites; the status filters above choose what is shown here.";
-  display: block; max-width: 560px; font-size: 14px; line-height: 1.55; opacity: 0.75;
-}
+/* Categories: the empty state index.js builds when there is nothing to show */
+.qa-empty { padding: 40px 28px; max-width: 520px; }
+.qa-empty__badge { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; margin-bottom: 16px;
+                   background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+.qa-empty__badge svg { width: 22px; height: 22px; }
+.qa-empty__badge_neutral { background: #f1f5f9; color: #64748b; border-color: #e2e8f0; }
+.qa-empty h3 { margin: 0 0 6px; font-size: 17px; font-weight: 600; }
+.qa-empty p { margin: 0 0 18px; font-size: 14px; line-height: 1.55; opacity: 0.8; }
+.qa-empty__cta { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px;
+                 background: #047857; color: #fff !important; font-size: 14px; font-weight: 600; text-decoration: none; }
+.qa-empty__cta:hover { background: #065f46; }
+[data-theme="dark"] .qa-empty__badge { background: #052e22; color: #34d399; border-color: #065f46; }
+[data-theme="dark"] .qa-empty__badge_neutral { background: #1e293b; color: #94a3b8; border-color: #334155; }
+[data-theme="dark"] .qa-empty__cta { background: #10b981; color: #022c22 !important; }
+[data-theme="dark"] .qa-empty__cta:hover { background: #34d399; }
+/* with zero failures there is nothing to sort, filter or search: hide those controls */
+.qa-categories-clear .tree__ctrl, .qa-categories-clear .pane__search, .qa-categories-clear .pane__controls { display: none; }

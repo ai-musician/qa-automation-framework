@@ -125,7 +125,7 @@ data/
   *.json              Seed data for the scripts
 scripts/              Load seed data into a running server by hand
 allure/
-  report.css          Allure report styles: this project's logo, roomier steps, tags as pills
+  plugin/             Allure plugin: this project's logo and styles, and a clear empty state for Categories
 infra/
   aws-setup.yml       One-time AWS setup: budget alert, GitHub OIDC login, least-privilege role for CI
   qa-env.yml          The per-run QA environment: one instance running the api image, open to the CI runner only

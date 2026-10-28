@@ -1,0 +1,7 @@
+id: qa-report
+name: QA report
+description: This project's logo and styles, and a clear empty state for the Categories tab
+jsFiles:
+  - index.js
+cssFiles:
+  - styles.css
