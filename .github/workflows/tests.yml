@@ -69,6 +69,8 @@ jobs:
         with:
           fetch-depth: 0          # full history, so the diff below can see the base commit
 
+      # Pull requests run the performance tests only when a performance-relevant file changed; merges to main always
+      # run them, so the published dashboard always has this build's load results.
       - name: Did a performance-relevant file change?
         id: diff
         env:
@@ -77,16 +79,19 @@ jobs:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
           # the API under test, the load tests and their helpers, test setup, dependencies, the containers, and this pipeline
           PERF_PATHS: '^(mock_server/[^/]*\.py$|tests/perf/|utils/|conftest\.py$|config\.py$|pytest\.ini$|requirements\.txt$|Dockerfile$|docker-compose\.yml$|\.dockerignore$|\.github/workflows/)'
+          # ... except the KPI dashboard: it reads the test results, it isn't tested by them
+          NOT_PERF_PATHS: '^utils/kpi\.py$'
         run: |
-          # manual run, or nothing to compare with (first push of a branch): run everything
-          if [ "$EVENT" = "workflow_dispatch" ] || [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+          # merge to main, manual run, or nothing to compare with (first push of a branch): run everything
+          if [ "$EVENT" != "pull_request" ] || [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
             echo "perf=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           changed=$(git diff --name-only "$BASE" "$GITHUB_SHA")
           echo "Changed files:"
           echo "$changed"
-          if echo "$changed" | grep -qE "$PERF_PATHS"; then
+          relevant=$(echo "$changed" | grep -vE "$NOT_PERF_PATHS" || true)
+          if echo "$relevant" | grep -qE "$PERF_PATHS"; then
             echo "perf=true" >> "$GITHUB_OUTPUT"
           else
             echo "perf=false" >> "$GITHUB_OUTPUT"
