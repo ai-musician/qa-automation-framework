@@ -480,10 +480,10 @@ CSS = """
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --page: #f8fafc; --surface: #ffffff; --sunk: #f1f5f9; --hover: #f8fafc;
   --ink: #0f172a; --ink-2: #475569; --muted: #64748b; --line: #e2e8f0; --line-2: #f1f5f9;
-  --accent: #0ea1a6; --accent-text: #04636c; --accent-wash: #ebfbfa; --accent-line: #a3e9e8;
+  --accent: #0f766e; --accent-text: #115e59; --accent-wash: #f0fdfa; --accent-line: #bfe3dc;
   --baseline: #cbd5e1; --track: #f1f5f9;
-  --btn: #04636c; --btn-hover: #055056; --btn-ink: #ffffff;
-  --good: #04636c; --warning: #b45309; --critical: #dc2626; --neutral: #64748b;
+  --btn: #115e59; --btn-hover: #134e4a; --btn-ink: #ffffff;
+  --good: #115e59; --warning: #b45309; --critical: #dc2626; --neutral: #64748b;
   --bad-wash: #fef2f2; --bad-line: #fecaca;
   --shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
 }
@@ -492,10 +492,10 @@ CSS = """
     color-scheme: dark;
     --page: #020617; --surface: #0f172a; --sunk: #1e293b; --hover: #162033;
     --ink: #f1f5f9; --ink-2: #cbd5e1; --muted: #94a3b8; --line: #1e293b; --line-2: #172033;
-    --accent: #0d8f93; --accent-text: #2ac3c3; --accent-wash: #052629; --accent-line: #055056;
+    --accent: #1f9488; --accent-text: #45c4b0; --accent-wash: #042f2e; --accent-line: #134e4a;
     --baseline: #475569; --track: #1e293b;
-    --btn: #0ea1a6; --btn-hover: #2ac3c3; --btn-ink: #022328;
-    --good: #2ac3c3; --warning: #fbbf24; --critical: #f87171; --neutral: #94a3b8;
+    --btn: #1f9488; --btn-hover: #45c4b0; --btn-ink: #042f2e;
+    --good: #45c4b0; --warning: #fbbf24; --critical: #f87171; --neutral: #94a3b8;
     --bad-wash: #2a1215; --bad-line: #7f1d1d;
     --shadow: none;
   }
@@ -504,10 +504,10 @@ CSS = """
   color-scheme: dark;
   --page: #020617; --surface: #0f172a; --sunk: #1e293b; --hover: #162033;
   --ink: #f1f5f9; --ink-2: #cbd5e1; --muted: #94a3b8; --line: #1e293b; --line-2: #172033;
-  --accent: #0d8f93; --accent-text: #2ac3c3; --accent-wash: #052629; --accent-line: #055056;
+  --accent: #1f9488; --accent-text: #45c4b0; --accent-wash: #042f2e; --accent-line: #134e4a;
   --baseline: #475569; --track: #1e293b;
-  --btn: #0ea1a6; --btn-hover: #2ac3c3; --btn-ink: #022328;
-  --good: #2ac3c3; --warning: #fbbf24; --critical: #f87171; --neutral: #94a3b8;
+  --btn: #1f9488; --btn-hover: #45c4b0; --btn-ink: #042f2e;
+  --good: #45c4b0; --warning: #fbbf24; --critical: #f87171; --neutral: #94a3b8;
   --bad-wash: #2a1215; --bad-line: #7f1d1d;
   --shadow: none;
 }
@@ -572,12 +572,12 @@ h1 { font-family: var(--font); font-size: 24px; line-height: 1.25; font-weight: 
 
 /* status banner */
 .banner { display: flex; align-items: center; gap: 12px; padding: 16px; border-radius: 12px;
-          background: linear-gradient(to right, rgba(16,185,129,.10), rgba(16,185,129,.04) 50%, transparent);
-          border: 1px solid rgba(16,185,129,.22); }
+          background: linear-gradient(to right, rgba(15,118,110,.10), rgba(15,118,110,.04) 50%, transparent);
+          border: 1px solid rgba(15,118,110,.22); }
 .banner.bad { background: linear-gradient(to right, rgba(220,38,38,.10), rgba(220,38,38,.03) 50%, transparent);
               border-color: rgba(220,38,38,.25); }
 .banner .badge { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; flex: none;
-                 background: rgba(16,185,129,.18); color: var(--accent-text); }
+                 background: rgba(15,118,110,.18); color: var(--accent-text); }
 .banner.bad .badge { background: rgba(220,38,38,.15); color: var(--critical); }
 .banner .badge svg.i { width: 20px; height: 20px; stroke-width: 2.4; }
 .banner .what { flex: 1; min-width: 0; }
@@ -991,7 +991,7 @@ def to_html(k: dict, sections: dict, latency: list, callouts: list, history: lis
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script>{THEME_BOOT}</script><style>{CSS}</style></head><body><div class="app">
 <aside class="side">
-  <div class="brand"><span class="mark"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="qa-mark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#14b3b0"/><stop offset="1" stop-color="#0f253d"/></linearGradient></defs><rect width="32" height="32" rx="9" fill="url(#qa-mark)"/><circle cx="16" cy="16" r="9.5" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="2.4"/><path d="M16 6.5a9.5 9.5 0 1 1-8.6 5.45" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M11.8 16.3l3 3 5.6-6" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+  <div class="brand"><span class="mark"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="qa-mark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#14857c"/><stop offset="1" stop-color="#0f2b3a"/></linearGradient></defs><rect width="32" height="32" rx="9" fill="url(#qa-mark)"/><circle cx="16" cy="16" r="9.5" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="2.4"/><path d="M16 6.5a9.5 9.5 0 1 1-8.6 5.45" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M11.8 16.3l3 3 5.6-6" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
     <div><strong>Quality</strong><small>QA Automation</small></div></div>
   <nav class="nav">
     <a class="on" href="#overview" data-spy>{icon("grid")}Overview</a>
