@@ -33,3 +33,14 @@
 }
 [data-theme="dark"] .test-result-overview__tags .label.label__info { background: #15302a; color: #4cc497; border-color: #24503f; }
 [data-theme="dark"] .test-result-overview__tags .pane__section:has([data-tooltip]) > span { background: #1f2524; border-color: #2c3432; }
+
+/* Categories lists only failed and broken tests, so on a green run it is empty: say why, instead of Allure's bare
+   "There are no items". Only on this page (other trees use the same empty element), and true whatever the filters. */
+body:has(.side-nav__link_active[data-tab="categories"]) .tree__empty { font-size: 0; padding: 22px 24px; }
+body:has(.side-nav__link_active[data-tab="categories"]) .tree__empty::before {
+  content: "No failed or broken tests to show"; display: block; font-size: 16px; font-weight: 600; margin-bottom: 6px;
+}
+body:has(.side-nav__link_active[data-tab="categories"]) .tree__empty::after {
+  content: "Categories lists only failures, sorted into product defects (the product did something wrong) and test defects (the test itself broke). Every test is under Suites; the status filters above choose what is shown here.";
+  display: block; max-width: 560px; font-size: 14px; line-height: 1.55; opacity: 0.75;
+}
