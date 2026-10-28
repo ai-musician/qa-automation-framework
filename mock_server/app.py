@@ -36,9 +36,11 @@ sessions: dict[str, dict] = {}       # token -> {role, userId} (would be Redis i
 # Each API key identifies a caller: a role, and (for normal users) which user they are.
 # In the real system every customer would have their own key; the mock starts with one of each role,
 # and an admin can issue more with POST /api/users/<id>/api-keys (the load tests log in as many users).
+# The keys come from API_KEY / ADMIN_API_KEY when set (the AWS QA environment generates new ones for every run),
+# otherwise the demo keys, the same defaults the tests use (config.py).
 API_KEYS = {
-    "user-api-key": {"role": "user", "userId": "123"},    # seed user 123, John Doe: a premium customer, but role user, not admin
-    "admin-api-key": {"role": "admin", "userId": None},   # back office: may act for anyone
+    os.getenv("API_KEY", "user-api-key"): {"role": "user", "userId": "123"},     # seed user 123, John Doe: a premium customer, but role user, not admin
+    os.getenv("ADMIN_API_KEY", "admin-api-key"): {"role": "admin", "userId": None},  # back office: may act for anyone
 }
 ACCOUNT_TYPES = ("standard", "premium")
 MAX_NAME_LENGTH = 100

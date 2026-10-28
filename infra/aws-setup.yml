@@ -1,0 +1,167 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  One-time setup for the on-demand AWS QA environment (infra/qa-env.yml): a monthly cost budget with email alerts,
+  GitHub as an OIDC identity provider, and a role that only this repository's main branch can assume, allowed to
+  create and delete QA environment stacks and nothing else. Deploy once, as an admin, in the region the QA
+  environment will run in.
+
+Parameters:
+  AlertEmail:
+    Type: String
+    Description: Where budget alerts are sent. Entered at deploy time, so it never appears in the repository.
+    AllowedPattern: ".+@.+\\..+"
+  MonthlyBudgetUSD:
+    Type: Number
+    Default: 5
+    Description: Alert threshold in USD per month. A budget only sends emails; it never stops or blocks anything.
+  GitHubRepository:
+    Type: String
+    Default: ai-musician/qa-automation-framework
+    Description: owner/repository allowed to assume the role
+  CreateGitHubOIDCProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: >
+      "false" if this AWS account already has the token.actions.githubusercontent.com identity provider
+      (an account can have only one per URL).
+  QAStackPrefix:
+    Type: String
+    Default: qa-env
+    Description: The role may only create and delete CloudFormation stacks whose name starts with this
+
+Conditions:
+  CreateProvider: !Equals [!Ref CreateGitHubOIDCProvider, "true"]
+
+Resources:
+
+  # ---------- cost: an email before the bill surprises anyone ----------
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: qa-environment-monthly
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MonthlyBudgetUSD
+          Unit: USD
+      NotificationsWithSubscribers:
+        - Notification: {NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 85, ThresholdType: PERCENTAGE}
+          Subscribers: [{SubscriptionType: EMAIL, Address: !Ref AlertEmail}]
+        - Notification: {NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 100, ThresholdType: PERCENTAGE}
+          Subscribers: [{SubscriptionType: EMAIL, Address: !Ref AlertEmail}]
+        - Notification: {NotificationType: FORECASTED, ComparisonOperator: GREATER_THAN, Threshold: 100, ThresholdType: PERCENTAGE}
+          Subscribers: [{SubscriptionType: EMAIL, Address: !Ref AlertEmail}]
+
+  # ---------- identity: GitHub Actions gets short-lived credentials; no AWS keys are stored in GitHub ----------
+  GitHubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+
+  QAEnvironmentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: github-qa-environment
+      Description: Assumed by GitHub Actions on main to create, test against and delete the QA environment
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - CreateProvider
+                - !Ref GitHubOIDCProvider
+                - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                # only runs on main of this repository; pull requests and forks can't assume it
+                # (a job that declares an "environment:" has a different subject and is refused too)
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepository}:ref:refs/heads/main
+      Policies:
+        - PolicyName: qa-environment-only
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: QAStacksOnly
+                Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${QAStackPrefix}-*/*
+
+              - Sid: ReadLatestAmazonLinuxImageId
+                Effect: Allow
+                Action: ssm:GetParameters
+                Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}::parameter/aws/service/ami-amazon-linux-latest/*
+
+              - Sid: ReadOnlyEC2
+                Effect: Allow
+                Action: ec2:Describe*
+                Resource: "*"
+                Condition: {StringEquals: {aws:RequestedRegion: !Ref AWS::Region}}
+
+              - Sid: LaunchOnlySmallInstances
+                Effect: Allow
+                Action: ec2:RunInstances
+                Resource: !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*
+                Condition:
+                  StringEquals:
+                    ec2:InstanceType: [t3.micro, t2.micro]
+
+              - Sid: LaunchDependencies
+                Effect: Allow
+                Action: ec2:RunInstances
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}::image/*
+                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/*
+                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/*
+                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*
+                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:volume/*
+
+              - Sid: SecurityGroupForTheRunnerOnly
+                Effect: Allow
+                Action:
+                  - ec2:CreateSecurityGroup
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:AuthorizeSecurityGroupEgress
+                  - ec2:RevokeSecurityGroupEgress
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*
+                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/*
+
+              - Sid: TagWhatItCreates
+                Effect: Allow
+                Action: ec2:CreateTags
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*
+                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:volume/*
+                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*
+
+              - Sid: DeleteOnlyQAEnvironmentResources
+                Effect: Allow
+                Action:
+                  - ec2:TerminateInstances
+                  - ec2:DeleteSecurityGroup
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*
+                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*
+                Condition:
+                  StringEquals:
+                    aws:ResourceTag/project: qa-env
+
+Outputs:
+  RoleArn:
+    Description: Save as the repository variable AWS_ROLE_ARN (Settings > Secrets and variables > Actions > Variables)
+    Value: !GetAtt QAEnvironmentRole.Arn
+  Region:
+    Description: Save as the repository variable AWS_REGION
+    Value: !Ref AWS::Region
