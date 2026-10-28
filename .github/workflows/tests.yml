@@ -149,8 +149,9 @@ jobs:
           path: reports/functional
 
       - name: Download performance reports
+        if: needs.performance.result == 'success' || needs.performance.result == 'failure'   # not when skipped
         uses: actions/download-artifact@v8
-        continue-on-error: true   # missing when performance tests were skipped
+        continue-on-error: true
         with:
           name: performance-reports
           path: reports/performance
@@ -195,8 +196,9 @@ jobs:
           path: reports/functional
 
       - name: Download performance results
+        if: needs.performance.result == 'success' || needs.performance.result == 'failure'   # not when skipped
         uses: actions/download-artifact@v8
-        continue-on-error: true   # missing when performance tests were skipped
+        continue-on-error: true
         with:
           name: performance-reports
           path: reports/performance
