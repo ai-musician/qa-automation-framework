@@ -353,7 +353,8 @@ shows a different number of tests than JUnit says ran.
 
 Every CI run ends with a **QA metrics review** on its summary page (`utils/kpi.py`, standard library only), and
 every merge to main publishes it as a dashboard: **https://ai-musician.github.io/qa-automation-framework/kpi/**
-(headline tiles, every metric against its goal, TP99 against each API's SLO with trend lines, light and dark mode).
+(the key signals, login TP99 against its recent median, coverage, a searchable table of every metric that opens
+to show where each number comes from, and TP99 against each API's SLO; light and dark mode, works on a phone).
 The full definitions, goals and reasoning are in **[docs/KPIs.md](docs/KPIs.md)**; in short:
 
 | Section | Metrics | Goals |

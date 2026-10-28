@@ -373,122 +373,278 @@ def sparkline(values: list[float]) -> str:
 
 # ---------- HTML: the dashboard published to GitHub Pages ----------
 
-ICONS = {   # 16px status icons: the color is on the icon, the meaning is in the label beside it
-    GOOD: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--good)"/>'
-          '<path d="M4.8 8.2l2.1 2.1 4.3-4.6" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    WARNING: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l7 12.5H1z" fill="var(--warning)"/>'
-             '<path d="M8 6v3.6" stroke="#0b0b0b" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="11.6" r=".9" fill="#0b0b0b"/></svg>',
-    CRITICAL: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--critical)"/>'
-              '<path d="M5.5 5.5l5 5m0-5l-5 5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>',
-    NONE: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="none" stroke="var(--muted)" stroke-width="1.5"/>'
-          '<path d="M5 8h6" stroke="var(--muted)" stroke-width="1.5" stroke-linecap="round"/></svg>',
+# 18px line icons (stroke = currentColor), drawn for this page
+ICON = {
+    "pulse": '<path d="M3 12h4l2.5-6 4 12 2.5-6H21"/>',
+    "clock": '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+    "flask": '<path d="M9.5 3.5h5M10.5 3.5v5.2L5.6 17.6A2 2 0 0 0 7.4 20.5h9.2a2 2 0 0 0 1.8-2.9l-4.9-8.9V3.5"/><path d="M7.8 14.5h8.4"/>',
+    "branch": '<circle cx="6.5" cy="5.5" r="2"/><circle cx="6.5" cy="18.5" r="2"/><circle cx="17.5" cy="7.5" r="2"/><path d="M6.5 7.5v9M17.5 9.5c0 4-5 4-9.5 7"/>',
+    "shield": '<path d="M12 3.5l7 2.6v5.4c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6.1z"/><path d="M8.8 12.2l2.2 2.2 4.2-4.4"/>',
+    "code": '<path d="M9 8l-4 4 4 4M15 8l4 4-4 4"/>',
+    "file": '<path d="M6.5 3.5h7l4 4v12a1 1 0 0 1-1 1h-10a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1z"/><path d="M13.5 3.5v4h4M8.5 12.5h7M8.5 16h7"/>',
+    "grid": '<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>',
+    "chart": '<path d="M4 4v16h16"/><path d="M7.5 15l3.5-4.5 3 2.5 5-6.5"/>',
+    "report": '<path d="M6.5 3.5h7l4 4v12a1 1 0 0 1-1 1h-10a1 1 0 0 1-1-1v-15a1 1 0 0 1 1-1z"/><path d="M9 13.5l2 2 4-4"/>',
+    "book": '<path d="M4 5.5c2.5-1.3 5.5-1.3 8 0 2.5-1.3 5.5-1.3 8 0v13c-2.5-1.3-5.5-1.3-8 0-2.5-1.3-5.5-1.3-8 0z"/><path d="M12 5.5v13"/>',
+    "users": '<circle cx="9" cy="8.5" r="3"/><path d="M3.5 19c.6-3 2.8-4.5 5.5-4.5s4.9 1.5 5.5 4.5"/><circle cx="17" cy="9.5" r="2.4"/><path d="M16.5 14.6c2.2.1 3.6 1.4 4 3.9"/>',
+    "search": '<circle cx="11" cy="11" r="6"/><path d="M15.5 15.5L20 20"/>',
+    "chevron": '<path d="M9.5 6.5L15 12l-5.5 5.5"/>',
+    "arrow": '<path d="M5 12h14M13.5 6.5L19 12l-5.5 5.5"/>',
+    "down": '<path d="M12 5v14M6.5 13.5L12 19l5.5-5.5"/>',
+    "up": '<path d="M12 19V5M6.5 10.5L12 5l5.5 5.5"/>',
+}
+STATUS_ICON = {
+    GOOD: '<circle cx="12" cy="12" r="8.5"/><path d="M8.3 12.3l2.5 2.5 4.9-5.1"/>',
+    WARNING: '<path d="M12 4l9 15.5H3z"/><path d="M12 10v4.2M12 17.2v.1"/>',
+    CRITICAL: '<circle cx="12" cy="12" r="8.5"/><path d="M9 9l6 6M15 9l-6 6"/>',
+    NONE: '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 12h7"/>',
 }
 LABELS = {GOOD: "On goal", WARNING: "Watch", CRITICAL: "Missed", NONE: "Tracked"}
+SOURCES = {   # where each number comes from: shown when a row in the table is opened
+    "availability": "performance.json: successful requests ÷ all requests, across every load scenario.",
+    "slo": "performance.json: load scenarios whose TP99 is within their SLO ÷ scenarios with an SLO.",
+    "login": "performance.json: TP99 of the login scenario in which every user has their own API key; the trend "
+             "compares it with the median of recent merges to main.",
+    "integrity": "performance.json: transactions missing from history after a burst of writes, and accounts created "
+                 "twice by 20 parallel sign-ups with one email.",
+    "load": "Performance tests run only when a performance-relevant file changes.",
+    "coverage": "The README's API table (documented endpoints and status codes) against api*.log (every request "
+                "the tests sent).",
+    "tests": "junit.xml from the API + UI test job.",
+    "bugs": "data/bugs.json: bugs the tests found before release, with severity.",
+    "open-critical": "data/bugs.json: critical bugs whose status isn't fixed.",
+    "cfr": "GitHub Actions: merges to main whose run failed ÷ all merges (DORA).",
+    "restore": "GitHub Actions: median time from the first red run on main to the next green one (DORA).",
+    "feedback": "GitHub Actions: median minutes from a push to its run finishing.",
+    "merges": "GitHub Actions: merges to main per week.",
+}
+GROUPS = {"output": "customer", "input": "engineering", "ops": "engineering"}
 
 CSS = """
 :root {
   color-scheme: light;
-  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
-  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
-  --accent: #2a78d6; --track: #cde2fb;
-  --good: #0ca30c; --warning: #fab219; --critical: #d03b3b;
+  --page: #f6f7f6; --side: #fbfbfa; --surface: #ffffff; --sunk: #f4f6f5;
+  --ink: #111816; --ink-2: #4f5a56; --muted: #7d8783; --line: #e6e9e7; --line-2: #eef0ef;
+  --accent: #0f8a5f; --accent-text: #0b6b49; --accent-wash: #e6f3ee; --baseline: #a7b6b1; --track: #edf0ef;
+  --good: #0b6b49; --warning: #8f5600; --critical: #c0392b; --neutral: #7d8783;
+  --shadow: 0 1px 2px rgba(17,24,22,0.04);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
-    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
-    --accent: #3987e5; --track: #184f95;
+    --page: #0f1211; --side: #121615; --surface: #161a19; --sunk: #1b201f;
+    --ink: #eef2f0; --ink-2: #b4bdb9; --muted: #8b9692; --line: #262d2b; --line-2: #212725;
+    --accent: #21a072; --accent-text: #4cc497; --accent-wash: #15302a; --baseline: #56645f; --track: #232a28;
+    --good: #4cc497; --warning: #e8b34a; --critical: #f07a6b; --neutral: #8b9692;
+    --shadow: none;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
-  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
-  --accent: #3987e5; --track: #184f95;
+  --page: #0f1211; --side: #121615; --surface: #161a19; --sunk: #1b201f;
+  --ink: #eef2f0; --ink-2: #b4bdb9; --muted: #8b9692; --line: #262d2b; --line-2: #212725;
+  --accent: #21a072; --accent-text: #4cc497; --accent-wash: #15302a; --baseline: #56645f; --track: #232a28;
+  --good: #4cc497; --warning: #e8b34a; --critical: #f07a6b; --neutral: #8b9692;
+  --shadow: none;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--ink);
-       font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-main { max-width: 1120px; margin: 0 auto; padding: 32px 16px 48px; }
-a { color: var(--accent); }
-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 32px;
-         margin-bottom: 24px; }
-h1 { font-size: 26px; font-weight: 650; margin: 0 0 4px; letter-spacing: -0.01em; }
-.meta { color: var(--ink-2); font-size: 14px; }
-.meta a { margin-left: 2px; }
-.verdict { text-align: right; }
-.verdict .hero { font-size: 48px; font-weight: 650; line-height: 1; letter-spacing: -0.02em; }
-.verdict .hero small { font-size: 20px; color: var(--ink-2); font-weight: 500; }
-.verdict .sub { color: var(--ink-2); font-size: 14px; margin-top: 6px; }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px 22px; }
-.callouts { margin-bottom: 20px; display: grid; gap: 8px; }
-.callout { display: flex; gap: 10px; align-items: flex-start; }
-.callout svg, .pill svg { width: 16px; height: 16px; flex: none; margin-top: 3px; }
-.callout strong { font-weight: 600; }
-.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
-.tile { display: flex; flex-direction: column; gap: 4px; min-height: 148px; }
-.tile .label { color: var(--ink-2); font-size: 14px; }
-.tile .value { font-size: 32px; font-weight: 650; letter-spacing: -0.01em; line-height: 1.15; }
-.tile .context { color: var(--ink-2); font-size: 13px; }
-.tile .spark { margin: 4px 0 2px; }
-.tile .foot { margin-top: auto; padding-top: 10px; display: flex; justify-content: space-between; align-items: center;
-              gap: 8px; color: var(--ink-2); font-size: 13px; white-space: nowrap; }
-.pill { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--ink-2); white-space: nowrap; }
-.pill svg { margin-top: 0; }
-.meter { height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
-.meter span { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
-.spark { width: 100%; height: auto; display: block; }
-.spark polyline { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
-.spark circle { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
-.sections { display: grid; gap: 16px; margin-bottom: 20px; }
-h2 { font-size: 17px; font-weight: 600; margin: 0; }
-h2 + .h2sub { color: var(--ink-2); font-size: 14px; margin: 2px 0 12px; }
+       font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+a { color: inherit; text-decoration: none; }
+svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7;
+        stroke-linecap: round; stroke-linejoin: round; }
+.app { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh;
+        background: linear-gradient(to right, var(--side) 248px, var(--line) 248px 249px, var(--page) 249px); }
+
+/* sidebar */
+.side { background: var(--side); padding: 28px 18px 20px;
+        display: flex; flex-direction: column; gap: 6px; position: sticky; top: 0; height: 100vh; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 8px 26px; font-size: 24px; font-weight: 700;
+         letter-spacing: -0.02em; }
+.brand .mark { width: 36px; height: 36px; border-radius: 9px; background: #12382c; color: #fff; display: grid;
+               place-items: center; }
+.brand .mark svg.i { width: 20px; height: 20px; stroke-width: 2; }
+.brand b { color: var(--accent); }
+.eyebrow { font-size: 11.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted);
+           padding: 0 10px 8px; }
+.nav a { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; color: var(--ink-2);
+         font-weight: 500; }
+.nav a:hover { background: var(--sunk); color: var(--ink); }
+.nav a.on { background: var(--accent-wash); color: var(--accent-text); }
+.nav .count { margin-left: auto; font: 600 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 4px 7px;
+              border-radius: 6px; background: var(--accent-wash); color: var(--accent-text); }
+.side .spacer { flex: 1; }
+.health { border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 14px 16px;
+          font-size: 13.5px; color: var(--ink-2); }
+.health strong { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: 14px; margin-bottom: 4px; }
+.health .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
+.health.bad .dot { background: var(--critical); }
+.repo { display: flex; align-items: center; gap: 10px; padding: 14px 8px 0; font-size: 13px; color: var(--ink-2); }
+.repo .avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--sunk); border: 1px solid var(--line);
+                display: grid; place-items: center; font-weight: 600; font-size: 12px; color: var(--ink-2); flex: none; }
+.repo strong { display: block; color: var(--ink); font-size: 13.5px; }
+
+/* main */
+.main { padding: 28px 40px 48px; max-width: 1340px; width: 100%; }
+.head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px 24px; flex-wrap: wrap;
+        margin-bottom: 14px; }
+h2 { font-size: 18px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+.head .meta, .meta { color: var(--muted); font-size: 13.5px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+.callouts { display: grid; gap: 8px; margin-bottom: 18px; }
+.callout { display: flex; gap: 10px; align-items: flex-start; padding: 12px 16px; font-size: 14px; }
+.callout.warning svg.i { color: var(--warning); } .callout.critical svg.i { color: var(--critical); }
+
+.signals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
+.signal { padding: 20px 22px 16px; display: flex; flex-direction: column; min-height: 196px; }
+.signal .top { display: flex; justify-content: space-between; color: var(--ink-2); font-weight: 500; }
+.signal .top svg.i { color: var(--muted); }
+.big { font-size: 44px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; margin-top: 14px; }
+.big small { font-size: 0.5em; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: 2px; }
+.signal .sub { color: var(--ink-2); font-size: 14px; margin-top: 4px; display: flex; align-items: center; gap: 4px; }
+.signal .sub svg.i { width: 15px; height: 15px; }
+.signal .foot { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line-2); display: flex;
+                justify-content: space-between; align-items: center; font-size: 13px; color: var(--muted); }
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; white-space: nowrap; }
+.status svg.i { width: 16px; height: 16px; }
+.status.good { color: var(--good); } .status.warning { color: var(--warning); }
+.status.critical { color: var(--critical); } .status.none { color: var(--neutral); }
+
+.pair { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 20px; margin-bottom: 20px; }
+.feature { padding: 26px 30px 26px; }
+.feature .title { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px 16px;
+                  flex-wrap: wrap; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; background: var(--sunk);
+        border: 1px solid var(--line); color: var(--ink-2); font-size: 13.5px; white-space: nowrap; }
+.chip svg.i { width: 15px; height: 15px; }
+.h3 { font-size: 18px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+.subtitle { color: var(--ink-2); font-size: 14px; margin-top: 2px; }
+.feature .big { font-size: 42px; margin-top: 22px; }
+.delta { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; margin-top: 2px; }
+.delta svg.i { width: 15px; height: 15px; }
+.delta.good { color: var(--good); } .delta.flat { color: var(--ink-2); } .delta.warning { color: var(--warning); }
+.legend { display: flex; justify-content: flex-end; gap: 18px; font-size: 13px; color: var(--ink-2); margin: 6px 0 10px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.bars { display: grid; grid-template-columns: 120px minmax(0, 1fr) 82px; gap: 16px 18px; align-items: center; }
+.bars .name { color: var(--ink-2); font-size: 15px; }
+.bars .val { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.track { height: 12px; border-radius: 6px; background: var(--track); position: relative; outline: none; }
+.track span { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; }
+.track:hover span, .track:focus span { filter: brightness(1.1); }
+.ticks { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; grid-column: 2;
+         font-variant-numeric: tabular-nums; margin-top: -6px; }
+.note { display: flex; align-items: center; gap: 10px; margin-top: 22px; padding: 12px 16px; border-radius: 10px;
+        background: var(--sunk); border: 1px solid var(--line); font-size: 14px; color: var(--ink-2); }
+.note svg.i { color: var(--good); width: 17px; height: 17px; }
+.note.critical svg.i { color: var(--critical); }
+.note strong { color: var(--ink); font-weight: 600; }
+
+.coverage { padding: 26px 30px 0; display: flex; flex-direction: column; }
+.coverage .title { display: flex; justify-content: space-between; }
+.coverage .title svg.i { color: var(--muted); }
+.cov-list { margin-top: 18px; }
+.cov { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 16px 0;
+       border-bottom: 1px solid var(--line-2); }
+.cov:last-child { border-bottom: 0; }
+.cov .ic { width: 36px; height: 36px; border-radius: 9px; background: var(--sunk); border: 1px solid var(--line);
+           display: grid; place-items: center; color: var(--ink-2); }
+.cov .ic svg.i { width: 17px; height: 17px; }
+.cov strong { display: block; font-weight: 600; }
+.cov .small { color: var(--ink-2); font-size: 13.5px; }
+.cov .num { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cov .num small { color: var(--muted); font-weight: 500; }
+.cov-foot { margin: auto -30px 0; padding: 14px 30px; border-top: 1px solid var(--line); background: var(--sunk);
+            border-radius: 0 0 14px 14px; display: flex; justify-content: space-between; font-size: 14px;
+            color: var(--muted); }
+.cov-foot a { color: var(--ink); font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.cov-foot a svg.i { width: 15px; height: 15px; }
+
+/* the metrics table */
+.detail-card { margin-bottom: 20px; }
+.detail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;
+               padding: 26px 30px 0; }
+.filters { display: flex; gap: 10px; flex-wrap: wrap; }
+.search { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 9px; padding: 0 12px;
+          background: var(--surface); color: var(--muted); }
+.search input { border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 14px;
+                padding: 9px 0; width: 190px; }
+select { border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink); font: inherit;
+         font-size: 14px; padding: 9px 12px; }
+.tabs { display: flex; gap: 28px; padding: 18px 30px 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tabs button { all: unset; cursor: pointer; padding: 6px 0 12px; color: var(--ink-2); font-weight: 500; white-space: nowrap;
+               border-bottom: 2px solid transparent; display: inline-flex; gap: 8px; align-items: center; }
+.tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tabs button.on { color: var(--ink); border-color: var(--accent); }
+.tabs .count { font-size: 12px; padding: 1px 7px; border-radius: 6px; background: var(--sunk); color: var(--muted); }
 table { width: 100%; border-collapse: collapse; }
-th { text-align: left; font-weight: 500; color: var(--muted); font-size: 13px; padding: 6px 8px;
-     border-bottom: 1px solid var(--grid); }
-td { padding: 10px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
-tr:last-child td { border-bottom: 0; }
-td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-td .note { display: block; color: var(--ink-2); font-size: 13px; margin-top: 2px; }
-td.status { width: 120px; white-space: nowrap; }
-td.goal, th.goal { width: 110px; color: var(--ink-2); white-space: nowrap; }
-.metric-value { font-weight: 600; white-space: nowrap; }
-.lat-row { display: grid; grid-template-columns: minmax(150px, 1.1fr) 3fr minmax(120px, auto); gap: 14px;
-           align-items: center; padding: 9px 0; border-bottom: 1px solid var(--grid); }
-.lat-row:last-of-type { border-bottom: 0; }
-.lat-name { font-size: 14px; }
-.lat-bar { position: relative; height: 22px; outline: none; }
-.lat-bar .meter { position: absolute; left: 0; right: 0; top: 8px; }
-.lat-bar:hover .meter span, .lat-bar:focus .meter span { filter: brightness(1.12); }
-.lat-val { font-size: 14px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.lat-val span { color: var(--ink-2); }
-.axis { display: grid; grid-template-columns: minmax(150px, 1.1fr) 3fr minmax(120px, auto); gap: 14px;
-        color: var(--muted); font-size: 12px; margin-top: 4px; }
-.axis div:nth-child(2) { display: flex; justify-content: space-between; }
-details { margin-top: 14px; }
-summary { cursor: pointer; color: var(--ink-2); font-size: 14px; }
-td .spark { width: 96px; }
-footer { color: var(--ink-2); font-size: 13px; margin-top: 8px; }
-#tip { position: fixed; pointer-events: none; background: var(--surface); color: var(--ink);
-       border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px;
-       box-shadow: 0 4px 16px rgba(0,0,0,0.12); opacity: 0; transition: opacity .08s; z-index: 10; }
+th { text-align: left; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+     color: var(--muted); padding: 14px 30px; border-bottom: 1px solid var(--line); }
+td { padding: 16px 30px; border-bottom: 1px solid var(--line-2); vertical-align: middle; }
+tr.row { cursor: pointer; }
+tr.row:hover td { background: var(--sunk); }
+tr.row td.name strong { font-weight: 600; display: block; }
+tr.row td.name span { color: var(--ink-2); font-size: 13.5px; }
+td.cur { font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.goal { color: var(--ink-2); white-space: nowrap; }
+td.chev { width: 40px; color: var(--muted); text-align: right; }
+td.chev svg.i { transition: transform .15s; }
+tr.row.open td.chev svg.i { transform: rotate(90deg); }
+tr.more td { background: var(--sunk); color: var(--ink-2); font-size: 14px; padding-top: 10px; padding-bottom: 14px; }
+tr.more[hidden], tr.row[hidden] { display: none; }
+.empty { padding: 22px 30px; color: var(--muted); }
+
+/* per-API latency */
+.latency { padding: 26px 30px 22px; }
+.lat { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(0, 3fr) 140px; gap: 16px; align-items: center;
+       padding: 11px 0; border-bottom: 1px solid var(--line-2); }
+.lat:last-of-type { border-bottom: 0; }
+.lat .val { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
+.lat .val span { color: var(--muted); font-weight: 400; }
+.lat .track { height: 8px; }
+.lat-axis { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(0, 3fr) 140px; gap: 16px; color: var(--muted);
+            font-size: 12px; margin-top: 6px; }
+.lat-axis div:nth-child(2) { display: flex; justify-content: space-between; }
+footer { color: var(--muted); font-size: 13px; margin-top: 18px; }
+footer a { color: var(--accent-text); }
+
+#tip { position: fixed; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--line);
+       border-radius: 10px; padding: 9px 12px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,0.12); opacity: 0;
+       transition: opacity .08s; z-index: 10; }
 #tip strong { display: block; font-size: 15px; }
-#tip span { color: var(--ink-2); display: block; }
-@media (max-width: 900px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 640px) {
-  .tiles { grid-template-columns: 1fr; }
-  td.goal, th.goal { display: none; }
-  td.status { width: auto; }
-  .verdict { text-align: left; }
-  .lat-row, .axis { grid-template-columns: 1fr auto; }
-  .lat-bar { grid-column: 1 / -1; grid-row: 2; }
-  .axis div:first-child, .axis div:last-child { display: none; }
-  .axis { grid-template-columns: 1fr; }
+#tip span { display: block; color: var(--ink-2); }
+
+@media (max-width: 1180px) { .signals { grid-template-columns: repeat(2, minmax(0, 1fr)); } .pair { grid-template-columns: 1fr; } }
+@media (max-width: 860px) {
+  .app { grid-template-columns: minmax(0, 1fr); background: var(--page); }
+  .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 6px;
+          padding: 16px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .brand { padding: 0 12px 0 4px; font-size: 20px; }
+  .eyebrow, .side .spacer, .repo { display: none; }
+  .nav { display: flex; gap: 2px; flex-wrap: wrap; min-width: 0; }
+  .nav a { padding: 8px 10px; }
+  .health { width: 100%; margin-top: 8px; }
+  .main { padding: 20px 16px 40px; }
+}
+@media (max-width: 560px) {
+  .signals { grid-template-columns: 1fr; }
+  .feature, .coverage, .latency { padding-left: 18px; padding-right: 18px; }
+  .cov-foot { margin: auto -18px 0; padding: 14px 18px; }
+  .detail-head, .tabs { padding-left: 18px; padding-right: 18px; }
+  th, td { padding-left: 18px; padding-right: 18px; }
+  th.goal, td.goal, th.chev, td.chev { display: none; }
+  .search input { width: 140px; }
+  .bars { grid-template-columns: 1fr auto; }
+  .bars .track { grid-column: 1 / -1; }
+  .ticks { grid-column: 1 / -1; }
+  .lat, .lat-axis { grid-template-columns: 1fr auto; }
+  .lat .track { grid-column: 1 / -1; grid-row: 2; }
+  .lat-axis div:first-child, .lat-axis div:last-child { display: none; }
+  .lat-axis { grid-template-columns: 1fr; }
 }
 """
 
-TOOLTIP_JS = """
+JS = """
 const tip = document.getElementById('tip');
 function show(el, x, y) {
   const [value, ...rest] = el.dataset.tip.split('|');
@@ -506,6 +662,35 @@ for (const el of document.querySelectorAll('[data-tip]')) {
   el.addEventListener('focus', () => { const r = el.getBoundingClientRect(); show(el, r.left + r.width / 2, r.top); });
   el.addEventListener('blur', () => tip.style.opacity = 0);
 }
+
+// the metrics table: tabs, search and status filter work together; a row opens to show where its number comes from
+let group = 'all';
+const search = document.getElementById('q'), statusSel = document.getElementById('status');
+function filter() {
+  const q = search.value.trim().toLowerCase(), st = statusSel.value;
+  let shown = 0;
+  for (const row of document.querySelectorAll('tr.row')) {
+    const ok = (group === 'all' || row.dataset.group === group) && (st === 'all' || row.dataset.status === st)
+               && row.dataset.name.includes(q);
+    row.hidden = !ok; shown += ok;
+    const more = row.nextElementSibling;
+    more.hidden = !ok || !row.classList.contains('open');
+  }
+  document.getElementById('none').hidden = shown > 0;
+}
+for (const b of document.querySelectorAll('.tabs button')) {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.tabs button').forEach(x => { x.classList.remove('on'); x.setAttribute('aria-selected', 'false'); });
+    b.classList.add('on'); b.setAttribute('aria-selected', 'true'); group = b.dataset.group; filter();
+  });
+}
+search.addEventListener('input', filter);
+statusSel.addEventListener('change', filter);
+for (const row of document.querySelectorAll('tr.row')) {
+  const toggle = () => { row.classList.toggle('open'); row.setAttribute('aria-expanded', row.classList.contains('open')); filter(); };
+  row.addEventListener('click', toggle);
+  row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+}
 """
 
 
@@ -513,127 +698,214 @@ def esc(value) -> str:
     return html.escape(str(value), quote=True)
 
 
-def pill(status: str) -> str:
-    return f'<span class="pill">{ICONS[status]}{LABELS[status]}</span>'
+def icon(name: str) -> str:
+    return f'<svg class="i" viewBox="0 0 24 24" aria-hidden="true">{ICON[name]}</svg>'
 
 
-def svg_sparkline(values: list[float], w=280, h=34) -> str:
-    """De-emphasis line for the history, accent dot for this run. Drawn at the size it's shown at (w x h),
-    so the dot stays round."""
-    if len(values) < 2:
-        return ""
-    pad = 5
-    low, high = min(values), max(values)
-    span = (high - low) or 1
-    pts = [(pad + i * (w - 2 * pad) / (len(values) - 1), h - pad - (v - low) / span * (h - 2 * pad))
-           for i, v in enumerate(values)]
-    poly = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
-    x, y = pts[-1]
-    return (f'<svg class="spark" viewBox="0 0 {w} {h}" style="max-width:{w}px" role="img" '
-            f'aria-label="last {len(values)} runs, from {values[0]:.1f} to {values[-1]:.1f}">'
-            f'<polyline points="{poly}"/><circle cx="{x:.1f}" cy="{y:.1f}" r="4"/></svg>')
+def status(s: str) -> str:
+    return (f'<span class="status {s}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true">{STATUS_ICON[s]}</svg>'
+            f'{LABELS[s]}</span>')
 
 
-def meter(ratio: float, label: str) -> str:
-    width = max(0.0, min(1.0, ratio)) * 100
-    return f'<div class="meter" role="img" aria-label="{esc(label)}"><span style="width:{width:.1f}%"></span></div>'
+def nice_max(value: float) -> float:
+    """The smallest round axis end at least 15% above value: ... 10, 20, 25, 50, 100, 200, 250 ..."""
+    candidates = sorted(step * 10 ** power for step in (1, 2, 2.5, 5) for power in range(-1, 6))
+    return next((top for top in candidates if top >= value * 1.15), value)
 
 
-TILE_KEYS = ["availability", "login", "slo", "coverage", "tests", "cfr"]   # the headline numbers, in this order
-
-
-def to_html(sections: dict, latency: list, callouts: list, history: list) -> str:
+def to_html(k: dict, sections: dict, latency: list, callouts: list, history: list) -> str:
     ctx, url = context(), links()
-    by_key = {m["key"]: m for ms in sections.values() for m in ms}
-    scored = [m for m in by_key.values() if m["status"] != NONE]
+    rows = [m for ms in sections.values() for m in ms]
+    by_key = {m["key"]: m for m in rows}
+    scored = [m for m in rows if m["status"] != NONE]
     on_goal = sum(m["status"] == GOOD for m in scored)
-    meta = " · ".join(x for x in [f"Run #{ctx['run']}" if ctx["run"] else "Local run",
-                                  f"commit {ctx['commit']}" if ctx["commit"] else "", ctx["date"]] if x)
-    run_link = f' · <a href="{esc(url["run"])}">CI run</a>' if url["run"] else ""
+    healthy = on_goal == len(scored) and not (k["operational"] or {}).get("stillBroken")
+    run = f"run #{ctx['run']}" if ctx["run"] else "this local run"
+    perf, tests, ops, cov = k["performance"], k["tests"], k["operational"], k["coverage"]
+    login = next((s for s in latency if s["name"] == CRITICAL_PATH), None)
+    out = []
 
-    out = [f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
-           f'<meta name="viewport" content="width=device-width, initial-scale=1">'
-           f'<title>QA Metrics Review</title><style>{CSS}</style></head><body><main>',
-           f'<header><div><h1>QA metrics review</h1><div class="meta">{esc(meta)}{run_link} · '
-           f'<a href="{esc(url["allure"])}">Test report</a> · <a href="{esc(url["definitions"])}">Definitions</a></div></div>'
-           f'<div class="verdict"><div class="hero">{on_goal}<small> of {len(scored)}</small></div>'
-           f'<div class="sub">metrics on goal</div></div></header>']
+    # sidebar
+    report_link = esc(url["allure"])
+    out.append(f'''<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>QA Metrics Review</title>
+<style>{CSS}</style></head><body><div class="app">
+<aside class="side">
+  <div class="brand"><span class="mark">{icon("pulse")}</span>quality<b>.</b></div>
+  <div class="eyebrow">This project</div>
+  <nav class="nav">
+    <a class="on" href="#overview">{icon("grid")}Overview</a>
+    <a href="#metrics">{icon("chart")}Metrics<span class="count">{len(rows)}</span></a>
+    <a href="{report_link}">{icon("report")}Test report</a>
+    <a href="{esc(url["definitions"])}">{icon("book")}Definitions</a>
+  </nav>
+  <div class="spacer"></div>
+  <div class="health{"" if healthy else " bad"}"><strong><span class="dot"></span>
+    {"Main branch is healthy" if healthy else "Needs attention"}</strong>
+    {f"All {len(scored)} goals met in {run}." if healthy else f"{len(scored) - on_goal} of {len(scored)} goals not met in {run}."}
+    {f"Last {len(history) + 1} merges within trend." if healthy and history else ""}</div>
+  <a class="repo" href="{esc(url["repo"])}"><span class="avatar">QA</span>
+    <span><strong>qa-automation-framework</strong>ai-musician on GitHub</span></a>
+</aside>
+<main class="main" id="overview">''')
 
-    # callouts first: a review starts with what needs attention
-    out.append('<section class="card callouts" aria-label="Callouts">')
     if callouts:
-        out += [f'<div class="callout">{ICONS[c["status"]]}<div><strong>{esc(c["title"])}.</strong> {esc(c["text"])}</div></div>'
-                for c in callouts]
+        out.append('<div class="callouts">' + "".join(
+            f'<div class="card callout {c["status"]}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true">'
+            f'{STATUS_ICON[c["status"]]}</svg><div><strong>{esc(c["title"])}.</strong> {esc(c["text"])}</div></div>'
+            for c in callouts) + '</div>')
+
+    # the key signals
+    meta = " · ".join(x for x in [run.capitalize(), f"commit {ctx['commit']}" if ctx["commit"] else "", ctx["date"]] if x)
+    out.append(f'<div class="head"><h2>The key signals</h2><div class="meta">{esc(meta)} · compared with your goals'
+               f'{" · pull request: a third of main&#39;s load" if ctx["pr"] else ""}</div></div><section class="signals">')
+
+    def signal(title, ico, big, unit, sub, m, sub_class=""):
+        return (f'<div class="card signal"><div class="top">{esc(title)}{icon(ico)}</div>'
+                f'<div class="big">{big}<small>{unit}</small></div><div class="sub {sub_class}">{sub}</div>'
+                f'<div class="foot"><span>Goal {esc(m["goal"])}</span>{status(m["status"])}</div></div>')
+
+    if perf and (m := by_key.get("availability")):
+        total = sum(s["requests"] for s in perf)
+        errors = sum(s["errors"] for s in perf)
+        out.append(signal("Availability under load", "pulse", m["value"].rstrip("%"), "%",
+                          f"{total:,} requests · {'no errors' if not errors else f'{errors:,} errors'}", m))
     else:
-        out.append(f'<div class="callout">{ICONS[GOOD]}<div><strong>No callouts.</strong> '
-                   f'Every metric is on goal and within its trend over the last {len(history) + 1} merges to main.</div></div>')
-    if ctx["pr"]:
-        out.append(f'<div class="callout">{ICONS[NONE]}<div>Pull request runs use a third of main\'s load: '
-                   f'compare latency with care.</div></div>')
+        out.append(f'<div class="card signal"><div class="top">Availability under load{icon("pulse")}</div>'
+                   f'<div class="big">–</div><div class="sub">Load tests didn\'t run in this build</div>'
+                   f'<div class="foot"><span>Goal ≥ {GOAL_AVAILABILITY}%</span>{status(NONE)}</div></div>')
+    if login and (m := by_key.get("login")):
+        if login["change"] is None:
+            sub = "first measurement"
+        else:
+            arrow = "down" if login["change"] < 0 else "up"
+            sub = f'{icon(arrow)}{abs(login["change"]):.0f}% {"below" if login["change"] < 0 else "above"} recent median'
+        out.append(signal("Login TP99 latency", "clock", f'{login["p99"]:.1f}', " ms", sub, m))
+    else:
+        out.append(f'<div class="card signal"><div class="top">Login TP99 latency{icon("clock")}</div>'
+                   f'<div class="big">–</div><div class="sub">Load tests didn\'t run in this build</div>'
+                   f'<div class="foot"><span>Goal ≤ 250 ms</span>{status(NONE)}</div></div>')
+    if tests and (m := by_key.get("tests")):
+        run_count = tests["tests"] - tests["skipped"]
+        out.append(signal("Functional tests", "flask", f'{tests["passed"]}', f" / {run_count}",
+                          f'API + UI in parallel · {tests["seconds"]} s', m))
+    if ops and (m := by_key.get("cfr")):
+        out.append(signal("Change failure rate", "branch", m["value"].rstrip("%"), "%",
+                          f'{ops["failed"]} of {ops["runs"]} merges broke main', m))
     out.append('</section>')
 
-    # headline tiles
-    out.append('<section class="tiles" aria-label="Headline metrics">')
-    for key in TILE_KEYS:
-        if not (m := by_key.get(key)):
-            continue
-        trend = svg_sparkline(m["series"]) if len(m["series"]) > 1 else ""
-        context_line = f'<div class="context">{esc(m["note"])}</div>' if m["note"] and not trend else ""
-        out.append(f'<div class="card tile"><div class="label">{esc(m["name"])}</div>'
-                   f'<div class="value">{esc(m["value"])}</div>{context_line}{trend}'
-                   f'<div class="foot"><span>Goal {esc(m["goal"])}</span>{pill(m["status"])}</div></div>')
-    out.append('</section>')
+    # featured: login latency, this run against the recent median
+    out.append('<div class="pair">')
+    if login:
+        median = statistics.median(login["series"][:-1]) if len(login["series"]) > 1 else None
+        top = nice_max(max(login["p99"], median or 0))
+        login_req = next((s for s in perf if s["name"] == CRITICAL_PATH), {})
+        users, parallel = login_req.get("requests", 0), login_req.get("concurrency", 0)
+        if login["change"] is None:
+            delta = '<div class="delta flat">first measurement: no trend yet</div>'
+        elif login["change"] < 0:
+            delta = f'<div class="delta good">{icon("down")}{abs(login["change"]):.0f}% below recent median</div>'
+        else:
+            cls = "warning" if login["status"] == WARNING else "flat"
+            delta = f'<div class="delta {cls}">{icon("up")}{login["change"]:.0f}% above recent median</div>'
+        headroom = 100 - pct(login["p99"], login["target"])
+        within = login["p99"] <= login["target"]
+        bars = [("Current run", login["p99"], "var(--accent)",
+                 f'{login["p99"]:.1f} ms TP99|this run|TP50 {login["p50"]:.1f} · TP90 {login["p90"]:.1f} ms')]
+        if median is not None:
+            bars.append(("Recent median", median, "var(--baseline)",
+                         f'{median:.1f} ms TP99|median of the last {len(login["series"]) - 1} merges to main'))
+        bar_html = "".join(
+            f'<div class="name">{name}</div><div class="track" tabindex="0" data-tip="{esc(tipt)}">'
+            f'<span style="width:{min(100, value / top * 100):.1f}%;background:{color}"></span></div>'
+            f'<div class="val">{"≈ " if name != "Current run" else ""}{value:.1f} ms</div>'
+            for name, value, color, tipt in bars)
+        ticks = "".join(f"<span>{t:g}{' ms' if i in (0, 5) else ''}</span>" for i, t in
+                        enumerate([top * f for f in (0, 0.2, 0.4, 0.6, 0.8, 1)]))
+        legend = ('<div class="legend"><span><i style="background:var(--accent)"></i>Current</span>'
+                  + ('<span><i style="background:var(--baseline)"></i>Recent median</span>' if median is not None else "")
+                  + '</div>')
+        headline = ("Login is faster than usual" if (login["change"] or 0) < 0 else
+                    "Login is slower than usual" if login["status"] == WARNING else "Login latency")
+        out.append(f'''<section class="card feature">
+  <div class="title"><div><div class="h3">{headline}</div><div class="subtitle">TP99 response time · lower is better</div></div>
+    <span class="chip">{icon("users")}{users:,} users · {parallel} at a time</span></div>
+  <div class="big">{login["p99"]:.1f}<small> ms</small></div>{delta}
+  {legend}
+  <div class="bars">{bar_html}<div class="ticks">{ticks}</div></div>
+  <div class="note{"" if within else " critical"}"><svg class="i" viewBox="0 0 24 24" aria-hidden="true">{STATUS_ICON[GOOD if within else CRITICAL]}</svg>
+    <span><strong>{f"{headroom:.1f}% below the latency limit." if within else "Over the latency limit."}</strong>
+    Your goal is ≤ {login["target"]} ms.</span></div>
+</section>''')
 
-    # the three sections as tables: every metric with its goal, status and context
-    out.append('<div class="sections">')
-    for key, (title, subtitle) in SECTION_TITLES.items():
-        if not sections[key]:
-            continue
-        rows = "".join(
-            f'<tr><td class="status">{pill(m["status"])}</td>'
-            f'<td>{esc(m["name"])}{f"<span class=note>{esc(m["note"])}</span>" if m["note"] else ""}</td>'
-            f'<td class="num"><span class="metric-value">{esc(m["value"])}</span></td><td class="goal">{esc(m["goal"])}</td></tr>'
-            for m in sections[key])
-        out.append(f'<section class="card"><h2>{title}</h2><div class="h2sub">{subtitle}</div>'
-                   f'<table><thead><tr><th>Status</th><th>Metric</th><th class="num">Now</th><th class="goal">Goal</th></tr></thead>'
-                   f'<tbody>{rows}</tbody></table></section>')
-    out.append('</div>')
+    # coverage, without the gaps
+    items = []
+    if (m := by_key.get("slo")):
+        within, total = m["value"].split(" of ")
+        items.append(("code", "API latency SLOs", "All APIs within their TP99 limit" if within == total
+                      else f"{int(total) - int(within)} over their TP99 limit", within, f" / {total}"))
+    items.append(("file", "Documented status codes", f"Across all {cov['endpoints']} endpoints",
+                  str(cov["statusCodesTested"]), f" / {cov['statusCodes']}"))
+    if (m := by_key.get("integrity")):
+        items.append(("shield", "Data integrity", "No lost or duplicated records" if m["value"] == "0"
+                      else "Lost or duplicated records found", m["value"], " issues"))
+    cov_html = "".join(f'<div class="cov"><span class="ic">{icon(ic)}</span><div><strong>{esc(t)}</strong>'
+                       f'<span class="small">{esc(sub)}</span></div><div class="num">{esc(n)}<small>{esc(of)}</small></div></div>'
+                       for ic, t, sub, n, of in items)
+    out.append(f'''<section class="card coverage">
+  <div class="title"><div><div class="h3">Coverage, without the gaps</div>
+    <div class="subtitle">Every documented check accounted for</div></div>{icon("shield")}</div>
+  <div class="cov-list">{cov_html}</div>
+  <div class="cov-foot"><span>Validated in {esc(run)}</span><a href="#metrics">Explore metrics{icon("arrow")}</a></div>
+</section></div>''')
 
-    # latency: how much of each API's TP99 budget was used, then the full table
+    # every metric, in detail
+    counts = {"all": len(rows), "customer": len(sections["output"]), "engineering": len(sections["input"]) + len(sections["ops"])}
+    body = []
+    for key, ms in sections.items():
+        for m in ms:
+            body.append(
+                f'<tr class="row" tabindex="0" aria-expanded="false" data-group="{GROUPS[key]}" data-status="{m["status"]}" '
+                f'data-name="{esc((m["name"] + " " + m["note"]).lower())}">'
+                f'<td class="name"><strong>{esc(m["name"])}</strong><span>{esc(m["note"])}</span></td>'
+                f'<td class="cur">{esc(m["value"])}</td><td class="goal">{esc(m["goal"])}</td>'
+                f'<td>{status(m["status"])}</td><td class="chev">{icon("chevron")}</td></tr>'
+                f'<tr class="more" hidden><td colspan="5"><strong>Measured from</strong> {esc(SOURCES.get(m["key"], "-"))}</td></tr>')
+    options = "".join(f'<option value="{s}">{LABELS[s]}</option>' for s in (GOOD, WARNING, CRITICAL, NONE))
+    out.append(f'''<section class="card detail-card" id="metrics">
+  <div class="detail-head"><div><div class="h3">Every metric, in detail</div>
+    <div class="subtitle">The evidence behind the overview · open a row to see where its number comes from</div></div>
+    <div class="filters"><label class="search">{icon("search")}<input id="q" type="search" placeholder="Search metrics…" aria-label="Search metrics"></label>
+      <select id="status" aria-label="Filter by status"><option value="all">All statuses</option>{options}</select></div></div>
+  <div class="tabs" role="tablist">
+    <button class="on" role="tab" aria-selected="true" data-group="all">All metrics<span class="count">{counts["all"]}</span></button>
+    <button role="tab" aria-selected="false" data-group="customer">Customer experience<span class="count">{counts["customer"]}</span></button>
+    <button role="tab" aria-selected="false" data-group="engineering">Engineering quality<span class="count">{counts["engineering"]}</span></button>
+  </div>
+  <table><thead><tr><th>Metric</th><th>Current</th><th class="goal">Goal</th><th>Status</th><th class="chev"></th></tr></thead>
+  <tbody>{"".join(body)}</tbody></table>
+  <div class="empty" id="none" hidden>No metric matches this filter.</div>
+</section>''')
+
+    # per-API latency against each SLO
     timed = [s for s in latency if s["target"]]
     if timed:
-        out.append('<section class="card"><h2>API latency under load</h2>'
-                   '<div class="h2sub">TP99 as a share of each API\'s SLO: a full bar means right at the limit</div>')
-        for s in timed:
-            used = pct(s["p99"], s["target"])
-            tip = (f"{s['p99']:.1f} ms TP99|{used:.0f}% of the {s['target']} ms SLO|"
-                   f"TP50 {s['p50']:.1f} · TP90 {s['p90']:.1f} ms|{s['requests']:,} requests")
-            out.append(f'<div class="lat-row"><div class="lat-name">{esc(s["name"])}</div>'
-                       f'<div class="lat-bar" tabindex="0" data-tip="{esc(tip)}">'
-                       f'{meter(used / 100, f"{s["name"]}: {used:.0f}% of SLO")}</div>'
-                       f'<div class="lat-val">{s["p99"]:.1f} ms <span>/ {s["target"]} ms</span></div></div>')
-        out.append('<div class="axis"><div></div><div><span>0%</span><span>50%</span><span>100% of SLO</span></div><div></div></div>')
+        lat_rows = "".join(
+            f'<div class="lat"><div>{esc(s["name"])}</div>'
+            f'<div class="track" tabindex="0" data-tip="{esc(f"{s["p99"]:.1f} ms TP99|{pct(s["p99"], s["target"]):.0f}% of the {s["target"]} ms SLO|TP50 {s["p50"]:.1f} · TP90 {s["p90"]:.1f} ms · {s["requests"]:,} requests")}">'
+            f'<span style="width:{min(100, pct(s["p99"], s["target"], 1)):.1f}%;background:var(--accent)"></span></div>'
+            f'<div class="val">{s["p99"]:.1f} ms <span>/ {s["target"]} ms</span></div></div>' for s in timed)
+        out.append(f'''<section class="card latency" id="latency">
+  <div class="h3">Every API, against its limit</div>
+  <div class="subtitle">TP99 as a share of each API's SLO: a full bar is right at the limit · hover for TP50 and TP90</div>
+  <div style="margin-top:14px">{lat_rows}</div>
+  <div class="lat-axis"><div></div><div><span>0%</span><span>50%</span><span>100% of SLO</span></div><div></div></div>
+</section>''')
 
-        rows = "".join(
-            f'<tr><td>{esc(s["name"])}</td><td class="num">{s["requests"]:,}</td>'
-            f'<td class="num">{s["p50"]:.1f}</td><td class="num">{(s["p90"] or 0):.1f}</td>'
-            f'<td class="num"><strong>{s["p99"]:.1f}</strong></td><td class="num">{s["target"] or "-"}</td>'
-            f'<td class="num">{f"{s["p999"]:.1f}" if s["p999"] is not None and s["requests"] >= 1000 else "-"}</td>'
-            f'<td>{svg_sparkline(s["series"], w=96, h=24)}</td>'
-            f'<td class="num">{f"{s["change"]:+.0f}%" if s["change"] is not None else "-"}</td></tr>'
-            for s in latency)
-        out.append(f'<details><summary>All latency percentiles, in milliseconds (table view)</summary>'
-                   f'<table><thead><tr><th>Scenario</th><th class="num">Requests</th><th class="num">TP50</th>'
-                   f'<th class="num">TP90</th><th class="num">TP99</th><th class="num">SLO</th>'
-                   f'<th class="num">TP99.9</th><th>TP99, last {len(history) + 1} merges</th>'
-                   f'<th class="num">vs median</th></tr></thead><tbody>{rows}</tbody></table>'
-                   f'<p class="meta">TP99.9 is shown only for scenarios with 1,000+ requests; below that it is the '
-                   f'slowest single request.</p></details></section>')
-
-    out.append(f'<footer><p>Not measured here, and why: escaped defects, Sev-2 incidents and time to detect need '
-               f'production traffic and an incident tracker; flaky-test rate needs reruns of the same commit. '
-               f'<a href="{esc(url["definitions"])}">The definitions</a> say how each would be measured.</p></footer>')
-    out.append(f'</main><div id="tip" role="tooltip"></div><script>{TOOLTIP_JS}</script></body></html>')
+    out.append(f'''<footer>Not measured here, and why: escaped defects, Sev-2 incidents and time to detect need production
+traffic and an incident tracker; flaky-test rate needs reruns of the same commit.
+<a href="{esc(url["definitions"])}">The definitions</a> say how each would be measured.</footer>
+</main></div><div id="tip" role="tooltip"></div><script>{JS}</script></body></html>''')
     return "\n".join(out)
 
 
@@ -661,7 +933,7 @@ def main():
     (args.out / "kpi.json").write_text(json.dumps({"sections": sections, "latency": latency, "callouts": callouts,
                                                    "raw": kpis}, indent=2, ensure_ascii=False) + "\n")
     (args.out / "kpi.md").write_text(markdown)
-    (args.out / "kpi.html").write_text(to_html(sections, latency, callouts, history))
+    (args.out / "kpi.html").write_text(to_html(kpis, sections, latency, callouts, history))
     print(markdown)
 
 
