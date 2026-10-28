@@ -1,7 +1,0 @@
-/* Replaces Allure's logo in the report's sidebar with this project's mark: the same green
-   pulse as the KPI dashboard. CI copies this file over the custom-logo-plugin's styles.css and enables the plugin
-   (.github/workflows/tests.yml, "Build the report"). */
-.side-nav__brand-icon {
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2312382c'/%3E%3Cpath d='M6 16h5l3.3-8 5.4 16 3.3-8H26' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat left center !important;
-  background-size: contain !important;
-}

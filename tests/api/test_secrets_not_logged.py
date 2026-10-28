@@ -24,11 +24,12 @@ pytestmark = [pytest.mark.api, pytest.mark.auth]
     (f"{{\"key\": \"{config.env.admin_api_key}\"}}", '{"key": "***"}'),   # a known secret under any field
     ('{"amount": 1e309, "apiKey": "k"', '{"amount": 1e309, "apiKey": "***"'),  # broken JSON, kept as sent
     ("Bearer 0b1c2d3e", "Bearer ***"),
+    ('{"message":"Missing bearer token"}', '{"message":"Missing bearer token"}'),   # an error message, not a token
     ('{"name": "Ann Lee", "email": "ann@qa.test"}', '{"name": "Ann Lee", "email": "ann@qa.test"}'),  # no secrets
     (b'{"apiKey": "user-api-key"}', '{"apiKey": "***"}'),                     # bytes, as requests stores them
     (None, ""),
 ], ids=["api-key", "token", "list", "number", "escaped-quote", "any-case", "other-spellings", "bare-known-key",
-        "known-key-any-field", "broken-json", "bearer", "nothing-secret", "bytes", "no-body"])
+        "known-key-any-field", "broken-json", "bearer", "bearer-in-a-message", "nothing-secret", "bytes", "no-body"])
 def test_redact_masks_credentials(body, expected):
     assert redact(body) == expected
 

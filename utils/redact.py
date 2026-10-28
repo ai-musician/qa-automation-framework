@@ -27,7 +27,8 @@ SECRET_FIELD = re.compile(
     r'("(?:[^"\\]|\\.)*"|\[[^\]]*\]|\{[^}]*\}|[^,}\]\s]+)',
     re.IGNORECASE)
 SECRET_HEADER = re.compile(r"^(?:" + "|".join(SECRET_FIELDS) + r"|x-api-key)$", re.IGNORECASE)
-BEARER = re.compile(r"Bearer\s+[^\s\"',}\]]+", re.IGNORECASE)
+# a token after "Bearer": 8+ token characters, so prose like "Missing bearer token" stays as the server wrote it
+BEARER = re.compile(r"Bearer\s+[A-Za-z0-9\-._~+/]{8,}=*", re.IGNORECASE)
 
 
 def add_secret(value):
