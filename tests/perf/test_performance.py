@@ -21,11 +21,11 @@ from pathlib import Path
 
 import allure
 import pytest
-import requests
 
 import config
 from utils.assertions import assert_status
 from utils.factories import SENDER_ID, make_transaction, make_user
+from utils.http import Session
 from utils.load import run_load, write_reports
 
 pytestmark = pytest.mark.perf
@@ -78,17 +78,25 @@ def test_login_under_load(perf_results):
 
 @pytest.fixture
 def login_users(admin_api):
-    """n(200) new users, each with their own API key. Setup, so not timed; deleted afterwards."""
-    created = []
-    for _ in range(n(200)):
-        user = admin_api.post("/api/users", make_user(email=f"login-{uuid.uuid4().hex}@qa.test"))
-        assert_status(user, 201)
-        key = admin_api.post(f"/api/users/{user.json()['id']}/api-keys")
-        assert_status(key, 201)
-        created.append(key.json())                      # {"apiKey": ..., "userId": ...}
-    yield created
-    for user in created:
-        admin_api.delete(f"/api/users/{user['userId']}")
+    """n(200) new users, each with their own API key. Setup, so not timed; deleted afterwards, also when the
+    setup fails partway, so a shared QA server is never left with test accounts."""
+    count = n(200)
+    if count < 2:
+        pytest.skip("needs at least 2 users: each token is also checked against another user's data")
+    user_ids, created = [], []
+    try:
+        for _ in range(count):
+            user = admin_api.post("/api/users", make_user(email=f"login-{uuid.uuid4().hex}@qa.test"))
+            assert_status(user, 201)
+            user_ids.append(user.json()["id"])          # recorded before its key, so cleanup finds it either way
+            key = admin_api.post(f"/api/users/{user_ids[-1]}/api-keys")
+            assert_status(key, 201)
+            created.append(key.json())                  # {"apiKey": ..., "userId": ...}
+        yield created
+    finally:
+        # 204 deleted, 404 already gone; anything else is a leftover account, so the cleanup fails loudly
+        left = [uid for uid in user_ids if admin_api.delete(f"/api/users/{uid}").status_code not in (204, 404)]
+        assert not left, f"{len(left)} of {len(user_ids)} test users could not be deleted, e.g. {left[:3]}"
 
 
 def test_login_different_users_under_load(login_users, perf_results):
@@ -104,12 +112,13 @@ def test_login_different_users_under_load(login_users, perf_results):
     check(run_load("login, different users", send, requests_total=len(login_users), concurrency=10), 250, perf_results)
 
     # after the load: each token may read its own user's transactions (200) and not the next user's (403)
+    api = Session()
     for i, token in tokens.items():
         own = login_users[i % len(login_users)]["userId"]
         other = login_users[(i + 1) % len(login_users)]["userId"]
         headers = {"Authorization": f"Bearer {token}"}
-        assert_status(requests.get(f"{API}/api/transactions/{own}", headers=headers), 200)
-        assert_status(requests.get(f"{API}/api/transactions/{other}", headers=headers), 403)
+        assert_status(api.get(f"{API}/api/transactions/{own}", headers=headers), 200)
+        assert_status(api.get(f"{API}/api/transactions/{other}", headers=headers), 403)
 
 
 def test_get_user_under_load(auth, perf_results):
