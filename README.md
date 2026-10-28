@@ -46,6 +46,33 @@ docker compose down                              # stop and remove the container
 
 Reports are written to `reports/` on your machine, as in a local run. CI runs these same commands.
 
+### Run against a QA server
+
+The tests image is built once and runs against any environment; only environment variables change.
+
+**The API in Docker as the QA server.** On the QA machine, `docker compose up -d api` keeps the API running at
+`http://<qa-machine>:5050`. Point tests at it from anywhere:
+
+```bash
+START_MOCK_SERVER=false API_BASE_URL=http://<qa-machine>:5050 BASE_URL=http://<qa-machine>:5050 pytest
+```
+
+**The tests container against a deployed QA server:**
+
+```bash
+docker compose run --rm --no-deps \
+  -e API_BASE_URL=https://api.qa.finpay.example \
+  -e BASE_URL=https://qa.finpay.example \
+  -e API_KEY -e ADMIN_API_KEY \
+  tests
+```
+
+- `--no-deps`: don't start the local API container; the tests only call the QA server.
+- `-e API_KEY` with no value passes the key in from your shell or a CI secret. Keys are never in the image:
+  `.dockerignore` keeps `.env` files out.
+- The tests clean up the data they create, but on a shared QA server use dedicated test accounts, and run
+  `pytest -m perf` only when the team agrees: 3× load on a shared server affects everyone testing on it.
+
 ---
 
 ## Project layout
