@@ -189,6 +189,7 @@ implements the same contract in Flask, with in-memory dicts standing in for Mong
 | `POST /api/users/:id/api-keys` | issue an API key for that user (**admin only**; used by the load tests to log in as many users) | 201, 401, 403, 404 |
 | `POST /api/transactions` | create transaction (own account only) | 201, 400, 401, 403, 404 |
 | `GET /api/transactions/:userId` | a user's transactions (own only; admins any) | 200, 401, 403, 404 |
+| `POST /v1/chat/completions` | OpenAI-compatible chat, streamed (`"stream": true`) or not: the mock inference service (see [Inference performance](#inference-performance)) | 200, 400, 401 |
 | `GET /ui` | mock frontend | 200 |
 
 All errors use one shape, which the tests rely on:
@@ -433,7 +434,8 @@ Run it locally after the tests: `pytest`, then `python -m utils.kpi --perf <fold
 ## Performance testing
 
 The PDF's overview lists performance testing as part of the assessment, so the framework includes a small,
-dependency-free load generator (`utils/load.py`: threads + `requests`) and seven scenarios:
+dependency-free load generator (`utils/load.py`: threads + `requests`) and seven scenarios, plus the
+[inference sweep](#inference-performance) below:
 
 | Scenario | Load | Checks |
 |---|---|---|
@@ -466,6 +468,40 @@ What the numbers mean and don't mean:
 - The duplicate-email check passed in 15 repeated runs, but the mock still checks "is this email taken?" and
   saves in two steps. A real service needs a unique index on email (MongoDB) so the database rejects the
   second insert; the test is there to catch it if that ever regresses.
+
+### Inference performance
+
+LLM inference services are judged by different numbers than a REST API, so the mock also serves an
+OpenAI-compatible chat endpoint (`POST /v1/chat/completions`, streamed as server-sent events with
+`"stream": true`), and `run_stream_load` in `utils/load.py` times every token as it arrives:
+
+| Metric | What it tells you | SLO here |
+|---|---|---|
+| **TTFT** (time to first token) | how long a user stares at a blank screen | TP99 ≤ 250 ms, up to capacity |
+| **Time between tokens** | whether text streams smoothly once it starts | TP99 ≤ 50 ms, at any load |
+| **Output tokens/s** | throughput: all streams together | measured |
+
+`test_chat_streaming_under_load` sweeps **1, 8, 16 and 32 concurrent users**, and also checks that every user gets
+their own, complete reply (each prompt carries a marker the reply must start with, so mixed-up streams fail),
+that no stream is cut short, and that requests past capacity wait rather than fail.
+
+The mock works like a model server with a fixed batch: it generates 16 replies at once, 20 ms to read the prompt
+and 10 ms per token. A laptop run shows the knee capacity planning looks for:
+
+| Users | TTFT TP50 | TTFT TP99 | Between tokens TP99 | Output tokens/s |
+|---:|---:|---:|---:|---:|
+| 1 | 30 ms | 32 ms | 13 ms | 81 |
+| 8 | 37 ms | 44 ms | 18 ms | 631 |
+| 16 | 32 ms | 51 ms | 18 ms | 1,238 |
+| 32 | 417 ms | 821 ms | 19 ms | 1,267 (saturated) |
+
+Up to 16 users, throughput grows almost linearly and TTFT stays flat. At 32, throughput stops growing and TTFT
+jumps 16×: half the requests queue for a free slot. Once a reply starts, it streams just as smoothly, which is why
+TTFT and time between tokens are measured separately. Against a real inference service, the same test finds the
+concurrency where TTFT leaves its SLO: the point to scale out, or to queue and shed load.
+
+No model runs here: each token is a word, at a fixed pace. The value is in the method, which carries over to a real
+endpoint by changing `API_BASE_URL` and the model name.
 
 ## CI/CD (GitHub Actions)
 

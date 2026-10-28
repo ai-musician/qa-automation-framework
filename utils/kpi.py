@@ -57,8 +57,9 @@ DEFAULT_REPOSITORY = "ai-musician/qa-automation-framework"
 # ---------- measurements ----------
 
 def documented_endpoints(readme: Path) -> dict[tuple[str, str], set[int]]:
-    """{(method, path regex): {status codes}} from rows like | `POST /api/users` | create user | 201, 400 |"""
-    row = re.compile(r"^\| `(GET|POST|PUT|PATCH|DELETE) (/api/\S+)` \|.*\| ([\d, ]+) \|$")
+    """{(method, path regex): {status codes}} from rows like | `POST /api/users` | create user | 201, 400 |
+    (the /api/ routes, and the OpenAI-compatible /v1/ routes of the mock inference service)"""
+    row = re.compile(r"^\| `(GET|POST|PUT|PATCH|DELETE) (/(?:api|v1)/\S+)` \|.*\| ([\d, ]+) \|$")
     endpoints = {}
     for line in readme.read_text().splitlines():
         if m := row.match(line):
