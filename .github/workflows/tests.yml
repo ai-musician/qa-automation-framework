@@ -32,9 +32,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -49,7 +49,7 @@ jobs:
 
       - name: Upload reports (HTML, JUnit, API log, failure screenshots)
         if: always()            # most useful when the tests failed
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: functional-reports
           path: reports/
@@ -61,7 +61,7 @@ jobs:
     outputs:
       perf: ${{ steps.diff.outputs.perf }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0          # full history, so the diff below can see the base commit
 
@@ -98,9 +98,9 @@ jobs:
     env:
       PERF_LOAD: ${{ github.event_name == 'push' && '3' || '1' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -117,7 +117,7 @@ jobs:
 
       - name: Upload performance reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: performance-reports
           path: reports/
@@ -133,21 +133,21 @@ jobs:
       contents: read
       actions: read               # the GitHub CLI reads this workflow's recent runs for the pipeline KPIs
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"  # utils/kpi.py uses the standard library only: nothing to install
 
       - name: Download functional reports
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true   # missing if that job didn't get far enough to upload
         with:
           name: functional-reports
           path: reports/functional
 
       - name: Download performance reports
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true   # missing when performance tests were skipped
         with:
           name: performance-reports
@@ -159,7 +159,7 @@ jobs:
         run: python -m utils.kpi --functional reports/functional --perf reports/performance --out reports/kpi >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload KPI report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: kpi-report
           path: reports/kpi/
