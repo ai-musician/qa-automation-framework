@@ -262,7 +262,10 @@ jobs:
           echo "  - custom-logo-plugin" >> "allure-$ALLURE_VERSION/config/allure.yml"
           "allure-$ALLURE_VERSION/bin/allure" generate results -o site --clean
           # the KPI dashboard (utils/kpi.py) goes next to the report, at /kpi/
-          if [ -f reports/kpi/kpi.html ]; then mkdir -p site/kpi && cp reports/kpi/kpi.html site/kpi/index.html; fi
+          # (kpi.json beside it is what the dashboard's "Export data" button downloads)
+          if [ -f reports/kpi/kpi.html ]; then
+            mkdir -p site/kpi && cp reports/kpi/kpi.html site/kpi/index.html && cp reports/kpi/kpi.json site/kpi/
+          fi
 
       - name: Check the report shows every test that ran
         run: |

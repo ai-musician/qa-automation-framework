@@ -24,7 +24,9 @@ import os
 import re
 import statistics
 import subprocess
+import sys
 import tempfile
+import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,6 +44,7 @@ GOAL_RESTORE_HOURS = 1           # median hours from a broken main to the next g
 INTEGRITY_SCENARIOS = ("create transaction", "same email x20 in parallel")   # money / accounts must stay correct
 CRITICAL_PATH = "login, different users"     # the first call of every customer session
 
+TREND_RUNS = 9                   # the run-history chart: this run and the 8 before it
 HISTORY_RUNS = 8                 # trend window: this many earlier merges to main
 OPS_RUNS = 30                    # operational window: this many completed runs on main
 REGRESSION = 1.25                # TP99 more than 25% over the trend's median ...
@@ -168,6 +171,47 @@ def perf_history(runs: list[dict], current_run: str | None) -> list[list[dict]]:
     return list(reversed(history))
 
 
+def suites(junit_files: list[Path]) -> list[dict]:
+    """Per test suite (tests/api, tests/ui, tests/perf): tests, failed, skipped, seconds, from JUnit."""
+    per = {}
+    for junit in junit_files:
+        for case in ET.parse(junit).getroot().iter("testcase"):
+            parts = case.get("classname", "").split(".")
+            key = parts[1] if len(parts) > 1 and parts[0] == "tests" else "other"
+            suite = per.setdefault(key, {"key": key, "tests": 0, "failed": 0, "skipped": 0, "seconds": 0.0})
+            suite["tests"] += 1
+            suite["seconds"] += float(case.get("time") or 0)
+            if case.find("failure") is not None or case.find("error") is not None:
+                suite["failed"] += 1
+            elif case.find("skipped") is not None:
+                suite["skipped"] += 1
+    order = ["api", "ui", "perf"]
+    return sorted(per.values(), key=lambda s: order.index(s["key"]) if s["key"] in order else len(order))
+
+
+def run_trend(current_run, passed: int, total: int) -> list[dict]:
+    """Tests per merge to main: the published Allure report's history (real counts, one per run) plus this run."""
+    try:
+        with urllib.request.urlopen(links()["allure"] + "history/history-trend.json", timeout=10) as res:
+            history = json.loads(res.read())
+    except (OSError, ValueError):
+        history = []                                    # offline, or no report published yet
+    points = sorted(({"run": p["buildOrder"], "passed": p["data"].get("passed", 0), "total": p["data"].get("total", 0)}
+                     for p in history if p.get("buildOrder") and str(p["buildOrder"]) != str(current_run)),
+                    key=lambda p: p["run"])
+    return points[-(TREND_RUNS - 1):] + [{"run": current_run or "now", "passed": passed, "total": total, "current": True}]
+
+
+def environment(perf: list | None) -> dict:
+    """What this run was built and tested with, from the CI context and requirements.txt."""
+    versions = dict(line.strip().split("==") for line in (ROOT / "requirements.txt").read_text().splitlines() if "==" in line)
+    login = next((s for s in perf or [] if s["name"] == "login"), None)
+    return {"commit": os.getenv("GITHUB_SHA", "")[:7], "branch": os.getenv("GITHUB_REF_NAME", ""),
+            "python": f"{sys.version_info.major}.{sys.version_info.minor}",
+            "pytest": versions.get("pytest"), "playwright": versions.get("playwright"),
+            "loadFactor": round(login["requests"] / 200, 1) if login else None}
+
+
 # ---------- the review ----------
 
 def pct(part, whole, digits=0):
@@ -220,7 +264,8 @@ def review(k: dict, history: list[list[dict]]) -> tuple[dict[str, list], list[di
         if critical := next((s for s in perf if s["name"] == CRITICAL_PATH), None):
             series, change, regressed = tp99_trend(CRITICAL_PATH, critical["p99_ms"], history)
             status = CRITICAL if critical["p99_ms"] > critical["target_p99_ms"] else WARNING if regressed else GOOD
-            note = "200 users, each with their own key" + (f" · {change:+.0f}% vs recent median" if change is not None else "")
+            note = "every user with their own key" + ("" if change is None else " · in line with recent median"
+                                                      if round(change) == 0 else f" · {change:+.0f}% vs recent median")
             sections["output"].append(metric(
                 "login", "Login TP99", f"{critical['p99_ms']:.1f} ms", f"≤ {critical['target_p99_ms']} ms",
                 status, note=note, series=series))
@@ -713,41 +758,287 @@ def nice_max(value: float) -> float:
     return next((top for top in candidates if top >= value * 1.15), value)
 
 
+ICON.update({
+    "suitcase": '<rect x="3.5" y="7" width="17" height="12.5" rx="2"/><path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7M3.5 12h17M10.5 12v2h3v-2"/>',
+    "history": '<path d="M4 19h16"/><path d="M5 15l4-4 3 2.5 6-6.5"/>',
+    "server": '<rect x="4" y="4.5" width="16" height="6" rx="1.5"/><rect x="4" y="13.5" width="16" height="6" rx="1.5"/><path d="M7.5 7.5h.01M7.5 16.5h.01"/>',
+    "gauge": '<path d="M4.5 16a7.5 7.5 0 1 1 15 0"/><path d="M12 16l3.5-4"/>',
+    "monitor": '<rect x="3.5" y="4.5" width="17" height="11.5" rx="1.5"/><path d="M9 20h6M12 16v4"/>',
+    "download": '<path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/>',
+    "github": '<path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21"/>',
+    "moon": '<path d="M19.5 14.5A7.5 7.5 0 0 1 9.5 4.5a7.5 7.5 0 1 0 10 10z"/>',
+    "bug": '<rect x="7.5" y="7.5" width="9" height="12" rx="4.5"/><path d="M12 11v8.5M7.5 13H4M20 13h-3.5M5 8.5l2.8 1.6M19 8.5l-2.8 1.6M5 18.5l2.8-1.8M19 18.5l-2.8-1.8M9.5 7.5a2.5 2.5 0 0 1 5 0"/>',
+})
+SUITE_INFO = {"api": ("API tests", "code"), "ui": ("UI tests", "monitor"), "perf": ("Performance tests", "gauge")}
+
+CSS += """
+/* overview: top bar, page header, run status */
+.main { padding-top: 0; }
+.topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0 -40px 30px;
+          padding: 18px 40px; border-bottom: 1px solid var(--line); }
+.crumbs { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 15px; }
+.crumbs b { color: var(--ink); font-weight: 500; }
+.crumbs svg.i { width: 14px; height: 14px; }
+.toplinks { display: flex; align-items: center; gap: 18px; font-size: 14.5px; color: var(--ink-2); }
+.toplinks a:hover { color: var(--ink); }
+.runchip { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid var(--line);
+           border-radius: 9px; font: 500 13.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); }
+.runchip svg.i { width: 16px; height: 16px; }
+.hero { display: flex; justify-content: space-between; align-items: flex-end; gap: 18px 28px; flex-wrap: wrap;
+        margin-bottom: 26px; }
+.kicker { font-size: 12.5px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); }
+h1 { font-size: 44px; line-height: 1.1; font-weight: 750; letter-spacing: -0.035em; margin: 10px 0 12px; }
+.when { color: var(--ink-2); font-size: 15px; display: flex; gap: 10px; flex-wrap: wrap; }
+.when .sep { color: var(--muted); }
+.when code { font: 500 14px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); }
+.actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.btn { display: inline-flex; align-items: center; gap: 9px; padding: 11px 18px; border-radius: 11px; font-weight: 600;
+       border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.btn:hover { background: var(--sunk); }
+.btn.primary { background: var(--btn); color: var(--btn-ink); border-color: transparent; }
+.btn.primary:hover { filter: brightness(1.05); background: var(--btn); }
+.banner { display: flex; align-items: center; gap: 18px; padding: 22px 26px; margin-bottom: 22px;
+          background: var(--accent-wash); border: 1px solid var(--banner-line); border-radius: 14px; }
+.banner.bad { background: var(--bad-wash); border-color: var(--bad-line); }
+.banner .badge { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; flex: none;
+                 background: var(--surface); color: var(--good); border: 1px solid var(--banner-line); }
+.banner.bad .badge { color: var(--critical); border-color: var(--bad-line); }
+.banner .badge svg.i { width: 22px; height: 22px; stroke-width: 2; }
+.banner .what { flex: 1; }
+.banner strong { display: block; font-size: 19px; font-weight: 650; letter-spacing: -0.01em; }
+.banner span.sub { color: var(--ink-2); font-size: 15px; }
+.state { display: inline-flex; align-items: center; gap: 8px; font: 600 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+         letter-spacing: 0.06em; color: var(--good); }
+.state i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.banner.bad .state { color: var(--critical); }
+.run-tiles .signal:first-child { background: var(--accent-wash); border-color: var(--banner-line); }
+.run-tiles .signal:first-child .big { color: var(--accent-text); }
+.mini { height: 4px; border-radius: 2px; background: var(--track); margin-top: 12px; }
+.mini span { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
+.run-tiles .signal { min-height: 176px; }
+
+/* run history chart */
+.section-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.chart { width: 100%; height: auto; display: block; margin-top: 18px; overflow: visible; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .ytick, .chart .xtick { fill: var(--muted); font-size: 12px; font-family: system-ui, sans-serif; }
+.chart .xtick.now { fill: var(--accent-text); font-weight: 650; }
+.chart .nowpill { fill: var(--accent-wash); stroke: var(--banner-line); }
+.chart .area { fill: var(--accent); opacity: 0.1; }
+.chart .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .pt { fill: var(--accent); stroke: var(--surface); stroke-width: 2; pointer-events: none; }
+.chart .hit { fill: transparent; cursor: default; outline: none; }
+.chart .hit:hover + .pt, .chart .hit:focus + .pt { r: 6; }
+.chart .endlabel { fill: var(--ink); font-size: 12.5px; font-weight: 650; font-family: system-ui, sans-serif; }
+.card-foot { margin: 18px -30px 0; padding: 14px 30px; border-top: 1px solid var(--line); background: var(--sunk);
+             border-radius: 0 0 14px 14px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+             font-size: 14px; color: var(--ink-2); }
+.card-foot strong { color: var(--ink); }
+.card-foot a { color: var(--accent-text); font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.card-foot a svg.i { width: 15px; height: 15px; }
+.panel { padding: 26px 30px 0; display: flex; flex-direction: column; }
+.panel > .card-foot { margin-top: auto; }
+
+/* suites */
+.suite { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 6px 14px; align-items: center;
+         padding: 16px 0; border-bottom: 1px solid var(--line-2); }
+.suite:last-of-type { border-bottom: 0; }
+.suite .ic { width: 38px; height: 38px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line);
+             display: grid; place-items: center; color: var(--ink-2); grid-row: span 2; }
+.suite strong { display: block; font-weight: 600; }
+.suite code { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+.suite .num { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.suite .num small { color: var(--muted); font-weight: 500; }
+.suite .bar { grid-column: 2 / -1; height: 6px; border-radius: 3px; background: var(--track); }
+.suite .bar span { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+.suite .meta { grid-column: 2 / -1; font-size: 13px; color: var(--ink-2); }
+.pill { font-size: 13px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink-2);
+        white-space: nowrap; }
+
+/* environment and bugs */
+.env { display: grid; grid-template-columns: minmax(120px, auto) 1fr; margin: 18px 0 26px; }
+.env dt, .env dd { padding: 11px 0; border-bottom: 1px solid var(--line-2); margin: 0; font-size: 14.5px; }
+.env dt { color: var(--ink-2); padding-right: 16px; }
+.env dd { font-weight: 500; }
+.env dd code { font: 13.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.env dt:nth-last-of-type(1), .env dd:last-of-type { border-bottom: 0; }
+.sev { display: grid; grid-template-columns: 80px minmax(0, 1fr) 28px; gap: 12px; align-items: center; padding: 9px 0; }
+.sev .name { color: var(--ink-2); text-transform: capitalize; }
+.sev .track { height: 8px; }
+.sev .n { text-align: right; font-weight: 650; font-variant-numeric: tabular-nums; }
+.bugs-big { display: flex; align-items: baseline; gap: 14px; margin: 16px 0 8px; }
+.bugs-big .big { margin: 0; font-size: 40px; }
+
+/* theme switch */
+.theme { display: flex; align-items: center; gap: 12px; padding: 14px 10px 4px; color: var(--ink-2); font-size: 14px; }
+.theme span { flex: 1; }
+.switch { all: unset; cursor: pointer; width: 42px; height: 24px; border-radius: 12px; background: var(--track);
+          border: 1px solid var(--line); position: relative; flex: none; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%;
+                 background: var(--muted); transition: transform .15s; }
+.switch[aria-checked="true"] { background: var(--accent-wash); border-color: var(--banner-line); }
+.switch[aria-checked="true"]::after { transform: translateX(18px); background: var(--accent); }
+.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.nav .sep { height: 1px; background: var(--line); margin: 10px 10px; }
+section[id], .pair[id] { scroll-margin-top: 16px; }
+
+:root { --btn: #0f8a5f; --btn-ink: #ffffff; --banner-line: #bfe0d2; --bad-wash: #fbeceb; --bad-line: #f0c4bf; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --btn: #7fd8aa; --btn-ink: #0d2a1f; --banner-line: #24503f; --bad-wash: #2a1716; --bad-line: #5a2925; }
+}
+:root[data-theme="dark"] { --btn: #7fd8aa; --btn-ink: #0d2a1f; --banner-line: #24503f; --bad-wash: #2a1716; --bad-line: #5a2925; }
+
+@media (max-width: 860px) {
+  .topbar { margin: 0 -16px 22px; padding: 14px 16px; }
+  .toplinks a.text { display: none; }
+  h1 { font-size: 34px; }
+  .theme { display: none; }
+}
+@media (max-width: 560px) {
+  .panel { padding: 22px 18px 0; }
+  .card-foot { margin: 18px -18px 0; padding: 14px 18px; }
+  .banner { padding: 18px; gap: 14px; flex-wrap: wrap; }
+}
+"""
+
+JS += """
+// dark / light switch: follows the system until chosen, then remembers the choice (when storage is available)
+const root = document.documentElement, sw = document.getElementById('theme');
+const isDark = () => root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+const sync = () => sw && sw.setAttribute('aria-checked', String(isDark()));
+sync();
+if (sw) sw.addEventListener('click', () => {
+  root.dataset.theme = isDark() ? 'light' : 'dark';
+  try { localStorage.setItem('qa-theme', root.dataset.theme); } catch (e) {}
+  sync();
+});
+"""
+THEME_BOOT = "try{const t=localStorage.getItem('qa-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}"
+
+
+def duration(seconds: float) -> tuple[str, str]:
+    """(number, unit) for a tile: 21.6 s, or 1m 05s."""
+    if seconds < 60:
+        return f"{seconds:.1f}", " s"
+    return f"{int(seconds // 60)}m {int(seconds % 60):02d}", "s"
+
+
+def suite_status(suite: dict) -> str:
+    """A suite passed or it didn't: the same icon + label as a status, with its own words."""
+    return status(GOOD if not suite["failed"] else CRITICAL).replace(
+        LABELS[GOOD if not suite["failed"] else CRITICAL], "Passed" if not suite["failed"] else f'{suite["failed"]} failed')
+
+
+def history_chart(points: list[dict]) -> str:
+    """Tests passed per merge to main: area + line, a point per run with a hover/focus tooltip, this run labeled."""
+    w, h, left, right, top, bottom = 640, 270, 44, 26, 30, 46
+    peak = max(p["total"] for p in points) or 1
+    step = 50 if peak > 60 else 10
+    ymax = -(-peak // step) * step
+    x = lambda i: left + (i * (w - left - right) / (len(points) - 1) if len(points) > 1 else (w - left - right) / 2)
+    y = lambda v: top + (1 - v / ymax) * (h - top - bottom)
+    out = [f'<svg class="chart" viewBox="0 0 {w} {h}" role="img" aria-label="Tests passed per merge to main, '
+           f'{esc(", ".join(f"run {p['run']}: {p['passed']} passed" for p in points))}">']
+    for v in range(0, ymax + 1, step):
+        out.append(f'<line class="grid" x1="{left}" x2="{w - right}" y1="{y(v):.1f}" y2="{y(v):.1f}"/>'
+                   f'<text class="ytick" x="{left - 10}" y="{y(v) + 4:.1f}" text-anchor="end">{v}</text>')
+    coords = [(x(i), y(p["passed"])) for i, p in enumerate(points)]
+    line = " ".join(f"{a:.1f},{b:.1f}" for a, b in coords)
+    if len(coords) > 1:
+        out.append(f'<path class="area" d="M{coords[0][0]:.1f},{y(0):.1f} L{line.replace(" ", " L")} L{coords[-1][0]:.1f},{y(0):.1f} Z"/>')
+        out.append(f'<polyline class="line" points="{line}"/>')
+    for (cx, cy), p in zip(coords, points):
+        failed = p["total"] - p["passed"]
+        tip = f'{p["passed"]} passed|run #{p["run"]}{" · this run" if p.get("current") else ""}|' + \
+              (f"{failed} failed or skipped" if failed else "no failures")
+        out.append(f'<circle class="hit" cx="{cx:.1f}" cy="{cy:.1f}" r="14" tabindex="0" data-tip="{esc(tip)}"/>'
+                   f'<circle class="pt" cx="{cx:.1f}" cy="{cy:.1f}" r="{5 if p.get("current") else 4}"/>')
+        label = f'#{p["run"]}'
+        if p.get("current"):
+            out.append(f'<rect class="nowpill" x="{cx - 22:.1f}" y="{h - 30}" width="44" height="24" rx="6"/>')
+        out.append(f'<text class="xtick{" now" if p.get("current") else ""}" x="{cx:.1f}" y="{h - 13}" text-anchor="middle">{esc(label)}</text>')
+    lx, ly = coords[-1]
+    out.append(f'<text class="endlabel" x="{lx:.1f}" y="{ly - 12:.1f}" text-anchor="middle">{points[-1]["passed"]}</text>')
+    out.append('</svg>')
+    return "".join(out)
+
+
 def to_html(k: dict, sections: dict, latency: list, callouts: list, history: list) -> str:
     ctx, url = context(), links()
     rows = [m for ms in sections.values() for m in ms]
     by_key = {m["key"]: m for m in rows}
     scored = [m for m in rows if m["status"] != NONE]
     on_goal = sum(m["status"] == GOOD for m in scored)
-    healthy = on_goal == len(scored) and not (k["operational"] or {}).get("stillBroken")
-    run = f"run #{ctx['run']}" if ctx["run"] else "this local run"
-    perf, tests, ops, cov = k["performance"], k["tests"], k["operational"], k["coverage"]
+    perf, ops, cov, bugs_, env = k["performance"], k["operational"], k["coverage"], k["bugs"], k["environment"]
+    suite_list, trend = k["suites"], k["trend"]
+    total = sum(s["tests"] for s in suite_list)
+    failed = sum(s["failed"] for s in suite_list)
+    skipped = sum(s["skipped"] for s in suite_list)
+    passed = total - failed - skipped
+    green_suites = sum(not s["failed"] for s in suite_list)
+    healthy = failed == 0 and on_goal == len(scored) and not (ops or {}).get("stillBroken")
+    run_label = f"run #{ctx['run']}" if ctx["run"] else "this local run"
     login = next((s for s in latency if s["name"] == CRITICAL_PATH), None)
+    names = [{"api": "API", "ui": "UI", "perf": "performance"}.get(s["key"], s["key"]) for s in suite_list]
+    suite_names = ", ".join(names[:-1]) + (f" and {names[-1]}" if len(names) > 1 else names[0] if names else "")
     out = []
 
-    # sidebar
-    report_link = esc(url["allure"])
+    # ---- sidebar ----
     out.append(f'''<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>QA Metrics Review</title>
-<style>{CSS}</style></head><body><div class="app">
+<script>{THEME_BOOT}</script><style>{CSS}</style></head><body><div class="app">
 <aside class="side">
   <div class="brand"><span class="mark">{icon("pulse")}</span>quality<b>.</b></div>
   <div class="eyebrow">This project</div>
   <nav class="nav">
     <a class="on" href="#overview">{icon("grid")}Overview</a>
+    <a href="#suites">{icon("suitcase")}Test suites<span class="count">{len(suite_list)}</span></a>
+    <a href="#history">{icon("history")}Run history</a>
     <a href="#metrics">{icon("chart")}Metrics<span class="count">{len(rows)}</span></a>
-    <a href="{report_link}">{icon("report")}Test report</a>
+    <a href="#latency">{icon("gauge")}API latency</a>
+    <a href="#environment">{icon("server")}Environment</a>
+    <div class="sep"></div>
+    <a href="{esc(url["allure"])}">{icon("report")}Test report</a>
     <a href="{esc(url["definitions"])}">{icon("book")}Definitions</a>
   </nav>
   <div class="spacer"></div>
   <div class="health{"" if healthy else " bad"}"><strong><span class="dot"></span>
-    {"Main branch is healthy" if healthy else "Needs attention"}</strong>
-    {f"All {len(scored)} goals met in {run}." if healthy else f"{len(scored) - on_goal} of {len(scored)} goals not met in {run}."}
-    {f"Last {len(history) + 1} merges within trend." if healthy and history else ""}</div>
+    {"All checks passed" if healthy else "Needs attention"}</strong>
+    {f"{run_label.capitalize()}: {total} tests, {'zero failures' if not failed else f'{failed} failed'}, all {len(scored)} goals met."
+     if healthy else f"{run_label.capitalize()}: {failed} failed tests, {len(scored) - on_goal} of {len(scored)} goals not met."}</div>
+  <div class="theme">{icon("moon")}<span>Dark appearance</span>
+    <button class="switch" id="theme" role="switch" aria-checked="false" aria-label="Dark appearance"></button></div>
   <a class="repo" href="{esc(url["repo"])}"><span class="avatar">QA</span>
     <span><strong>qa-automation-framework</strong>ai-musician on GitHub</span></a>
 </aside>
 <main class="main" id="overview">''')
+
+    # ---- top bar and page header ----
+    run_chip = (f'<a class="runchip" href="{esc(url["run"])}">{icon("github")}run #{esc(ctx["run"])}</a>'
+                if url["run"] else "")
+    out.append(f'''<div class="topbar"><div class="crumbs">QA automation {icon("chevron")}<b>Overview</b></div>
+  <div class="toplinks"><a class="text" href="{esc(url["allure"])}">Allure test report</a>{run_chip}</div></div>
+<div class="hero"><div><div class="kicker">A clearer picture of quality</div><h1>Quality overview</h1>
+  <div class="when"><span>{esc(ctx["date"])}</span>{f'<span class="sep">·</span><code>{esc(ctx["commit"])}</code>' if ctx["commit"] else ""}
+  {f'<span class="sep">·</span><span>{esc(run_label)}</span>' if ctx["run"] else ""}
+  {'<span class="sep">·</span><span>pull request: a third of main&#39;s load</span>' if ctx["pr"] else ""}</div></div>
+  <div class="actions">{f'<a class="btn" href="{esc(url["run"])}">{icon("file")}Run details</a>' if url["run"] else ""}
+    <a class="btn primary" href="kpi.json" download>{icon("download")}Export data</a></div></div>''')
+
+    # ---- run status ----
+    if not suite_list:
+        banner = ("bad", CRITICAL, "No test results in this run.", "The test jobs didn't produce JUnit results.", "NO RESULTS")
+    elif failed:
+        bad = [SUITE_INFO.get(s["key"], (s["key"],))[0] for s in suite_list if s["failed"]]
+        banner = ("bad", CRITICAL, f"{failed} of {total} tests failed.", f"Failures in: {', '.join(bad)}.", "FAILURES")
+    else:
+        perf_note = "" if perf else " Load tests didn't run in this build."
+        banner = ("", GOOD, f"All {total} tests passed. Every suite is green.",
+                  f"{suite_names} suites completed successfully.{perf_note}", "COMPLETED")
+    cls, st, title, sub, state = banner
+    out.append(f'''<div class="banner {cls}"><span class="badge"><svg class="i" viewBox="0 0 24 24" aria-hidden="true">{STATUS_ICON[st]}</svg></span>
+  <div class="what"><strong>{esc(title)}</strong><span class="sub">{esc(sub)}</span></div>
+  <span class="state"><i></i>{state}</span></div>''')
 
     if callouts:
         out.append('<div class="callouts">' + "".join(
@@ -755,46 +1046,93 @@ def to_html(k: dict, sections: dict, latency: list, callouts: list, history: lis
             f'{STATUS_ICON[c["status"]]}</svg><div><strong>{esc(c["title"])}.</strong> {esc(c["text"])}</div></div>'
             for c in callouts) + '</div>')
 
-    # the key signals
-    meta = " · ".join(x for x in [run.capitalize(), f"commit {ctx['commit']}" if ctx["commit"] else "", ctx["date"]] if x)
-    out.append(f'<div class="head"><h2>The key signals</h2><div class="meta">{esc(meta)} · compared with your goals'
-               f'{" · pull request: a third of main&#39;s load" if ctx["pr"] else ""}</div></div><section class="signals">')
-
-    def signal(title, ico, big, unit, sub, m, sub_class=""):
+    # ---- run tiles ----
+    def tile(title, ico, big, unit, sub, extra=""):
         return (f'<div class="card signal"><div class="top">{esc(title)}{icon(ico)}</div>'
-                f'<div class="big">{big}<small>{unit}</small></div><div class="sub {sub_class}">{sub}</div>'
+                f'<div class="big">{big}<small>{unit}</small></div><div class="sub">{sub}</div>{extra}</div>')
+
+    run_count = total - skipped
+    rate = pct(passed, run_count, 1) if run_count else 0
+    functional_s = sum(s["seconds"] for s in suite_list if s["key"] != "perf")
+    perf_s = sum(s["seconds"] for s in suite_list if s["key"] == "perf")
+    num, unit = duration(functional_s + perf_s)
+    out.append('<section class="signals run-tiles" aria-label="This run">')
+    out.append(tile("Pass rate", "report", f"{rate:g}", "%", "No failed tests" if not failed else f"{failed} failed",
+                    f'<div class="mini"><span style="width:{rate:.1f}%"></span></div>'))
+    out.append(tile("Tests passed", "flask", str(passed), f" / {run_count}", "Across all test suites"))
+    out.append(tile("Time in tests", "clock", num, unit,
+                    f"API + UI {functional_s:.1f} s" + (f" · load {perf_s:.1f} s" if perf_s else "")))
+    out.append(tile("Test suites", "suitcase", str(green_suites), f" / {len(suite_list)}",
+                    "Every suite passed" if green_suites == len(suite_list) else f"{len(suite_list) - green_suites} with failures"))
+    out.append('</section>')
+
+    # ---- run history + suite breakdown ----
+    out.append('<div class="pair">')
+    current = trend[-1] if trend else None
+    out.append(f'''<section class="card panel" id="history">
+  <div class="section-title"><div><div class="h3">Consistency across runs</div>
+    <div class="subtitle">Tests passed per merge to main, last {len(trend)} runs · from the published report's history</div></div>
+    <div class="legend" style="margin:0"><span><i style="background:var(--accent)"></i>Passed</span></div></div>
+  {history_chart(trend) if trend else ""}
+  <div class="card-foot"><span>Latest result <strong>{current["passed"] if current else "-"} passed</strong></span>
+    <a href="{esc(url["allure"])}#graph">Open the trend in Allure{icon("arrow")}</a></div>
+</section>''')
+    biggest = max((s["tests"] for s in suite_list), default=1)
+    suite_rows = "".join(
+        f'<div class="suite"><span class="ic">{icon(SUITE_INFO.get(s["key"], (s["key"], "code"))[1])}</span>'
+        f'<div><strong>{esc(SUITE_INFO.get(s["key"], (s["key"],))[0])}</strong><code>tests.{esc(s["key"])}</code></div>'
+        f'<div class="num">{s["tests"]}<small> tests</small></div>'
+        f'<div class="bar" role="img" aria-label="{s["tests"]} of {total} tests"><span style="width:{s["tests"] / biggest * 100:.1f}%"></span></div>'
+        f'<div class="meta">{suite_status(s)} · {s["seconds"]:.1f} s'
+        f'{f" · {s['skipped']} skipped" if s["skipped"] else ""}</div></div>'
+        for s in suite_list)
+    out.append(f'''<section class="card panel" id="suites">
+  <div class="section-title"><div><div class="h3">Test suite breakdown</div>
+    <div class="subtitle">{total} checks, {len(suite_list)} layers of confidence</div></div><span class="pill">{len(suite_list)} suites</span></div>
+  <div style="margin-top:8px">{suite_rows}</div>
+  <div class="card-foot">{status(GOOD if green_suites == len(suite_list) else CRITICAL).replace("On goal", "All suites passed" if green_suites == len(suite_list) else "Failures")}
+    <a href="{esc(url["allure"])}#suites">Explore suites{icon("arrow")}</a></div>
+</section></div>''')
+
+    # ---- key signals ----
+    out.append(f'<div class="head" style="margin-top:6px"><h2>The key signals</h2><div class="meta">compared with your goals</div></div>'
+               '<section class="signals" aria-label="Key signals">')
+
+    def signal(title, ico, big, unit, sub, m):
+        return (f'<div class="card signal"><div class="top">{esc(title)}{icon(ico)}</div>'
+                f'<div class="big">{big}<small>{unit}</small></div><div class="sub">{sub}</div>'
                 f'<div class="foot"><span>Goal {esc(m["goal"])}</span>{status(m["status"])}</div></div>')
 
+    def missing(title, ico, goal):
+        return (f'<div class="card signal"><div class="top">{title}{icon(ico)}</div><div class="big">–</div>'
+                f'<div class="sub">Load tests didn\'t run in this build</div>'
+                f'<div class="foot"><span>Goal {goal}</span>{status(NONE)}</div></div>')
+
     if perf and (m := by_key.get("availability")):
-        total = sum(s["requests"] for s in perf)
         errors = sum(s["errors"] for s in perf)
         out.append(signal("Availability under load", "pulse", m["value"].rstrip("%"), "%",
-                          f"{total:,} requests · {'no errors' if not errors else f'{errors:,} errors'}", m))
+                          f"{sum(s['requests'] for s in perf):,} requests · {'no errors' if not errors else f'{errors:,} errors'}", m))
     else:
-        out.append(f'<div class="card signal"><div class="top">Availability under load{icon("pulse")}</div>'
-                   f'<div class="big">–</div><div class="sub">Load tests didn\'t run in this build</div>'
-                   f'<div class="foot"><span>Goal ≥ {GOAL_AVAILABILITY}%</span>{status(NONE)}</div></div>')
+        out.append(missing("Availability under load", "pulse", f"≥ {GOAL_AVAILABILITY}%"))
     if login and (m := by_key.get("login")):
-        if login["change"] is None:
-            sub = "first measurement"
-        else:
-            arrow = "down" if login["change"] < 0 else "up"
-            sub = f'{icon(arrow)}{abs(login["change"]):.0f}% {"below" if login["change"] < 0 else "above"} recent median'
+        sub = "first measurement" if login["change"] is None else "in line with recent median" if round(login["change"]) == 0 else \
+            f'{icon("down" if login["change"] < 0 else "up")}{abs(login["change"]):.0f}% {"below" if login["change"] < 0 else "above"} recent median'
         out.append(signal("Login TP99 latency", "clock", f'{login["p99"]:.1f}', " ms", sub, m))
     else:
-        out.append(f'<div class="card signal"><div class="top">Login TP99 latency{icon("clock")}</div>'
-                   f'<div class="big">–</div><div class="sub">Load tests didn\'t run in this build</div>'
-                   f'<div class="foot"><span>Goal ≤ 250 ms</span>{status(NONE)}</div></div>')
-    if tests and (m := by_key.get("tests")):
-        run_count = tests["tests"] - tests["skipped"]
-        out.append(signal("Functional tests", "flask", f'{tests["passed"]}', f" / {run_count}",
-                          f'API + UI in parallel · {tests["seconds"]} s', m))
+        out.append(missing("Login TP99 latency", "clock", "≤ 250 ms"))
+    if (m := by_key.get("coverage")):
+        tested, of = m["value"].split(" of ")
+        out.append(signal("Status codes tested", "file", tested, f" / {of}", f"across all {cov['endpoints']} endpoints", m))
     if ops and (m := by_key.get("cfr")):
         out.append(signal("Change failure rate", "branch", m["value"].rstrip("%"), "%",
                           f'{ops["failed"]} of {ops["runs"]} merges broke main', m))
     out.append('</section>')
+    return to_html_rest(out, k, sections, latency, history, by_key, rows, login, cov, bugs_, env, run_label, url)
 
-    # featured: login latency, this run against the recent median
+
+def to_html_rest(out, k, sections, latency, history, by_key, rows, login, cov, bugs_, env, run_label, url) -> str:
+    perf = k["performance"]
+    # ---- featured: login latency, this run against the recent median ----
     out.append('<div class="pair">')
     if login:
         median = statistics.median(login["series"][:-1]) if len(login["series"]) > 1 else None
@@ -803,6 +1141,8 @@ def to_html(k: dict, sections: dict, latency: list, callouts: list, history: lis
         users, parallel = login_req.get("requests", 0), login_req.get("concurrency", 0)
         if login["change"] is None:
             delta = '<div class="delta flat">first measurement: no trend yet</div>'
+        elif round(login["change"]) == 0:
+            delta = '<div class="delta flat">in line with the recent median</div>'
         elif login["change"] < 0:
             delta = f'<div class="delta good">{icon("down")}{abs(login["change"]):.0f}% below recent median</div>'
         else:
@@ -825,7 +1165,7 @@ def to_html(k: dict, sections: dict, latency: list, callouts: list, history: lis
         legend = ('<div class="legend"><span><i style="background:var(--accent)"></i>Current</span>'
                   + ('<span><i style="background:var(--baseline)"></i>Recent median</span>' if median is not None else "")
                   + '</div>')
-        headline = ("Login is faster than usual" if (login["change"] or 0) < 0 else
+        headline = ("Login is faster than usual" if round(login["change"] or 0) < 0 else
                     "Login is slower than usual" if login["status"] == WARNING else "Login latency")
         out.append(f'''<section class="card feature">
   <div class="title"><div><div class="h3">{headline}</div><div class="subtitle">TP99 response time · lower is better</div></div>
@@ -838,7 +1178,6 @@ def to_html(k: dict, sections: dict, latency: list, callouts: list, history: lis
     Your goal is ≤ {login["target"]} ms.</span></div>
 </section>''')
 
-    # coverage, without the gaps
     items = []
     if (m := by_key.get("slo")):
         within, total = m["value"].split(" of ")
@@ -856,10 +1195,10 @@ def to_html(k: dict, sections: dict, latency: list, callouts: list, history: lis
   <div class="title"><div><div class="h3">Coverage, without the gaps</div>
     <div class="subtitle">Every documented check accounted for</div></div>{icon("shield")}</div>
   <div class="cov-list">{cov_html}</div>
-  <div class="cov-foot"><span>Validated in {esc(run)}</span><a href="#metrics">Explore metrics{icon("arrow")}</a></div>
+  <div class="cov-foot"><span>Validated in {esc(run_label)}</span><a href="#metrics">Explore metrics{icon("arrow")}</a></div>
 </section></div>''')
 
-    # every metric, in detail
+    # ---- every metric, in detail ----
     counts = {"all": len(rows), "customer": len(sections["output"]), "engineering": len(sections["input"]) + len(sections["ops"])}
     body = []
     for key, ms in sections.items():
@@ -887,7 +1226,7 @@ def to_html(k: dict, sections: dict, latency: list, callouts: list, history: lis
   <div class="empty" id="none" hidden>No metric matches this filter.</div>
 </section>''')
 
-    # per-API latency against each SLO
+    # ---- every API against its limit ----
     timed = [s for s in latency if s["target"]]
     if timed:
         lat_rows = "".join(
@@ -901,6 +1240,36 @@ def to_html(k: dict, sections: dict, latency: list, callouts: list, history: lis
   <div style="margin-top:14px">{lat_rows}</div>
   <div class="lat-axis"><div></div><div><span>0%</span><span>50%</span><span>100% of SLO</span></div><div></div></div>
 </section>''')
+    else:
+        out.append('<section class="card latency" id="latency"><div class="h3">Every API, against its limit</div>'
+                   '<div class="subtitle">Load tests didn\'t run in this build: no latency to show.</div></section>')
+
+    # ---- environment + bugs ----
+    load = f'PERF_LOAD={env["loadFactor"]:g} · one process' if env["loadFactor"] else "not run in this build"
+    env_rows = [("Commit", f'<code>{esc(env["commit"] or "local")}</code>'),
+                ("Branch", esc(env["branch"] or "local")),
+                ("API under test", "mock fintech API in Docker"),
+                ("Functional tests", "<code>pytest -n auto</code> · parallel workers"),
+                ("Load tests", esc(load)),
+                ("Tools", f'Python {esc(env["python"])} · pytest {esc(env["pytest"])} · Playwright {esc(env["playwright"])}'),
+                ("Also on merges", "the same tests against an AWS QA environment, created and deleted per run")]
+    out.append(f'''<div class="pair"><section class="card panel" id="environment">
+  <div class="section-title"><div><div class="h3">Built on a known environment</div>
+    <div class="subtitle">What this run was built and tested with</div></div></div>
+  <dl class="env">{"".join(f"<dt>{a}</dt><dd>{b}</dd>" for a, b in env_rows)}</dl>
+</section>''')
+    sev_max = max(bugs_["bySeverity"].values(), default=1)
+    sev_rows = "".join(f'<div class="sev"><span class="name">{esc(s)}</span><div class="track"><span style="width:{n / sev_max * 100:.1f}%;'
+                       f'background:var(--accent)"></span></div><span class="n">{n}</span></div>'
+                       for s, n in bugs_["bySeverity"].items())
+    out.append(f'''<section class="card panel">
+  <div class="section-title"><div><div class="h3">Bugs caught before release</div>
+    <div class="subtitle">Found by the tests, by severity</div></div>{icon("bug")}</div>
+  <div class="bugs-big"><div class="big">{bugs_["found"]}</div><span class="meta">found · {bugs_["open"]} open</span></div>
+  <div>{sev_rows}</div>
+  <div class="card-foot"><span>{"All fixed · the tests that caught them still run" if not bugs_["open"] else f"{bugs_['open']} still open"}</span>
+    <a href="{esc(url["repo"])}#bugs-found-in-the-mock-api-and-fixed">See the list{icon("arrow")}</a></div>
+</section></div>''')
 
     out.append(f'''<footer>Not measured here, and why: escaped defects, Sev-2 incidents and time to detect need production
 traffic and an incident tracker; flaky-test rate needs reruns of the same commit.
@@ -926,6 +1295,12 @@ def main():
         "operational": operational(runs),
     }
     history = perf_history(runs, os.getenv("GITHUB_RUN_ID")) if kpis["performance"] else []
+    junit_files = sorted({f.resolve() for f in (args.functional / "junit.xml", args.perf / "junit.xml") if f.exists()})
+    kpis["suites"] = suites(junit_files)
+    run_total = sum(x["tests"] for x in kpis["suites"])
+    run_passed = run_total - sum(x["failed"] + x["skipped"] for x in kpis["suites"])
+    kpis["trend"] = run_trend(os.getenv("GITHUB_RUN_NUMBER"), run_passed, run_total)
+    kpis["environment"] = environment(kpis["performance"])
     sections, latency, callouts = review(kpis, history)
     markdown = to_markdown(sections, latency, callouts, history)
 
