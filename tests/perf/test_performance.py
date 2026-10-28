@@ -26,7 +26,7 @@ import config
 from utils.assertions import assert_status
 from utils.factories import SENDER_ID, make_transaction, make_user
 from utils.http import Session
-from utils.load import run_load, write_reports
+from utils.load import run_load, run_stream_load, write_reports
 
 pytestmark = pytest.mark.perf
 
@@ -171,3 +171,42 @@ def test_same_email_registered_in_parallel_creates_one_user(auth, admin_api, per
     users = admin_api.get("/api/users")
     assert_status(users, 200)
     assert sum(u["email"] == email for u in users.json()) == 1, "the email exists more than once"
+
+
+# ---------- inference: streamed chat completions ----------
+# The mock inference endpoint generates 16 replies at once (its decode slots, like a model server's batch), so the
+# sweep goes past that: up to 16 users, time to first token (TTFT) stays low; at 32, half the requests wait for a
+# free slot, and TTFT jumps. That knee is what capacity planning looks for, so 32 users is measured, not judged.
+
+CHAT_TOKENS = 32              # tokens per reply
+TTFT_SLO_MS = 250             # TP99 time to first token, at or below capacity
+BETWEEN_TOKENS_SLO_MS = 50    # TP99 time between tokens, at any load: once a reply starts, it must flow smoothly
+
+
+@pytest.mark.parametrize("users, ttft_slo_ms", [(1, TTFT_SLO_MS), (8, TTFT_SLO_MS), (16, TTFT_SLO_MS), (32, None)],
+                         ids=["1 user", "8 users", "16 users", "32 users (past capacity)"])
+def test_chat_streaming_under_load(auth, perf_results, users, ttft_slo_ms):
+    """TTFT, time between tokens and tokens per second as more users stream at once; and every user gets their own,
+    complete reply: it starts with the request's own marker, has every token, and ends properly."""
+    def send(s, i):
+        return s.post(f"{API}/v1/chat/completions", headers=auth, stream=True, json={
+            "model": "mock-llm-small", "stream": True, "max_tokens": CHAT_TOKENS,
+            "messages": [{"role": "user", "content": f"req-{i} summarize my account activity"}]})
+
+    name = f"chat first token, {users} user{'s' if users > 1 else ''}"
+    requests_total = n(max(12, 4 * users))                      # at least 4 rounds of every user
+    summary, streams = run_stream_load(name, send, requests_total, concurrency=users)
+
+    if ttft_slo_ms:
+        check(summary, ttft_slo_ms, perf_results)               # no errors, and TTFT TP99 within its SLO
+    else:
+        summary.passed = summary.error_rate == 0
+        perf_results.append(summary)
+        assert summary.error_rate == 0, f"{summary.errors} of {summary.requests} streams failed past capacity, " \
+                                        f"e.g. {summary.sample_errors}: requests should queue, not fail"
+    assert summary.itl_p99_ms <= BETWEEN_TOKENS_SLO_MS, \
+        f"TP99 between tokens {summary.itl_p99_ms:.1f} ms is over {BETWEEN_TOKENS_SLO_MS} ms"
+    for i, stream in enumerate(streams, start=4):               # request numbers start after the 4 warm-up requests
+        assert stream.content.startswith(f"req-{i} "), f"request {i} got another reply: {stream.content[:40]!r}"
+        assert stream.tokens == CHAT_TOKENS and stream.finish_reason == "length" and stream.done, \
+            f"request {i}: {stream.tokens} of {CHAT_TOKENS} tokens, finish_reason {stream.finish_reason}, done {stream.done}"

@@ -10,6 +10,7 @@ The fake fintech API (plus a tiny web UI) that the tests run against.
     POST   /api/users/<id>/api-keys     issue an API key for that user (admin) -> 201 / 403 / 404
     POST   /api/transactions            create a transaction     -> 201 / 400 / 403 / 404
     GET    /api/transactions/<userId>   a user's transactions    -> 200 / 403 / 404
+    POST   /v1/chat/completions         OpenAI-compatible chat, streamed or not -> 200 / 400 / 401 (mock inference)
     GET    /ui                          mock frontend (registration + transactions)
 
 Data lives in Python dicts (stand-ins for MongoDB / Redis), so it disappears when the server stops.
@@ -19,12 +20,15 @@ Run it by hand:  python -m mock_server.app
 
 from datetime import datetime, timezone
 from functools import wraps
+import json
 import math
 import os
 import re
+import threading
+import time
 import uuid
 
-from flask import Flask, g, jsonify, request
+from flask import Flask, Response, g, jsonify, request, stream_with_context
 
 app = Flask(__name__)
 
@@ -298,6 +302,83 @@ def get_user_transactions(user_id):
     # a user with no transactions yet gets an empty list, not an error
     txs = [t for t in transactions.values() if t["userId"] == user_id]
     return jsonify({"count": len(txs), "transactions": txs}), 200
+
+
+# ---------- inference: an OpenAI-compatible chat endpoint ----------
+# A stand-in for an LLM inference service, so the load tests can measure what inference teams measure: time to first
+# token (TTFT), the time between tokens, and tokens per second, and how they change as more users stream at once.
+# No model runs here: each token is a word, produced at a fixed pace. The reply starts with the first word of the
+# last message, so a test can tell if two users' streams ever got mixed up.
+CHAT_MODELS = ("mock-llm-small",)
+MAX_COMPLETION_TOKENS = 512
+DEFAULT_COMPLETION_TOKENS = 16
+DECODE_SLOTS = 16              # requests generated at once, like a model server's batch; more wait in a queue
+PREFILL_MS = 20                # reading the prompt before the first token ...
+PREFILL_MS_PER_TOKEN = 0.1     # ... a little longer for a longer prompt
+TOKEN_MS = 10                  # each further token: 100 tokens/s per stream
+REPLY_WORDS = "the quick brown fox jumps over the lazy dog while the band plays on".split()
+decode_slots = threading.BoundedSemaphore(DECODE_SLOTS)
+
+
+def validate_chat(body):
+    details = {}
+    if body.get("model") not in CHAT_MODELS:
+        details["model"] = f"model must be one of {', '.join(CHAT_MODELS)}"
+    messages = body.get("messages")
+    if (not isinstance(messages, list) or not messages
+            or not all(isinstance(m, dict) and m.get("role") in ("system", "user", "assistant")
+                       and isinstance(m.get("content"), str) for m in messages)):
+        details["messages"] = "messages must be a non-empty list of {role, content}"
+    max_tokens = body.get("max_tokens", DEFAULT_COMPLETION_TOKENS)
+    if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or not 1 <= max_tokens <= MAX_COMPLETION_TOKENS:
+        details["max_tokens"] = f"max_tokens must be a whole number from 1 to {MAX_COMPLETION_TOKENS}"
+    if not isinstance(body.get("stream", False), bool):
+        details["stream"] = "stream must be true or false"
+    return details
+
+
+@app.post("/v1/chat/completions")
+@request_auth
+def chat_completions():
+    body = json_object()
+    if body is None:
+        return fail(400, "VALIDATION_ERROR", "Request validation failed", NOT_AN_OBJECT)
+    if details := validate_chat(body):
+        return fail(400, "VALIDATION_ERROR", "Request validation failed", details)
+
+    messages, max_tokens = body["messages"], body.get("max_tokens", DEFAULT_COMPLETION_TOKENS)
+    prompt_tokens = sum(len(m["content"].split()) for m in messages)
+    first = (messages[-1]["content"].split() or ["..."])[0]
+    words = [first] + [REPLY_WORDS[i % len(REPLY_WORDS)] for i in range(max_tokens - 1)]
+    reply = {"id": f"chatcmpl-{uuid.uuid4().hex[:24]}", "created": int(time.time()), "model": body["model"]}
+    usage = {"prompt_tokens": prompt_tokens, "completion_tokens": max_tokens, "total_tokens": prompt_tokens + max_tokens}
+
+    def tokens():
+        """The reply, one token at a time, at the model's pace; waits for a free decode slot first."""
+        with decode_slots:
+            time.sleep((PREFILL_MS + PREFILL_MS_PER_TOKEN * prompt_tokens) / 1000)
+            for i, word in enumerate(words):
+                if i:
+                    time.sleep(TOKEN_MS / 1000)
+                yield word if i == 0 else " " + word
+
+    if not body.get("stream", False):
+        content = "".join(tokens())
+        return jsonify({**reply, "object": "chat.completion", "usage": usage, "choices": [
+            {"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": "length"}]}), 200
+
+    def events():
+        """Server-sent events, as OpenAI streams them: a role, the tokens, the finish reason, then [DONE]."""
+        def chunk(delta, finish_reason=None, **extra):
+            return "data: " + json.dumps({**reply, "object": "chat.completion.chunk", **extra, "choices": [
+                {"index": 0, "delta": delta, "finish_reason": finish_reason}]}) + "\n\n"
+        yield chunk({"role": "assistant", "content": ""})
+        for token in tokens():
+            yield chunk({"content": token})
+        yield chunk({}, "length", usage=usage)
+        yield "data: [DONE]\n\n"
+
+    return Response(stream_with_context(events()), mimetype="text/event-stream", headers={"Cache-Control": "no-cache"})
 
 
 # ---------- mock frontend ----------

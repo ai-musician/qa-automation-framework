@@ -36,6 +36,7 @@ PROTECTED_ROUTES = [
     ("post", f"/api/users/{SENDER_ID}/api-keys"),
     ("post", "/api/transactions"),
     ("get", f"/api/transactions/{SENDER_ID}"),
+    ("post", "/v1/chat/completions"),
 ]
 
 @pytest.mark.negative
