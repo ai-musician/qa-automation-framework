@@ -1,5 +1,15 @@
 # FinPay QA Automation Framework
 
+[![tests](https://github.com/ai-musician/qa-automation-framework/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/ai-musician/qa-automation-framework/actions/workflows/tests.yml?query=branch%3Amain)
+
+**Live results**, updated on every merge to main:
+
+| | |
+|---|---|
+| **[QA dashboard](https://ai-musician.github.io/qa-automation-framework/)** | the run's status, quality KPIs against their goals, trends, latency against SLOs |
+| **[Test report](https://ai-musician.github.io/qa-automation-framework/report/)** | every test with its steps and API calls (Allure) |
+| **[CI runs](https://github.com/ai-musician/qa-automation-framework/actions/workflows/tests.yml?query=branch%3Amain)** | API + UI, performance, AWS QA environment, KPIs, publishing |
+
 Test automation framework for the Senior Quality Engineer take-home assessment.
 It tests a fintech system (users, transactions, auth) through its **REST API** and its **web UI**.
 
@@ -332,7 +342,7 @@ Every run writes to `reports/`:
 | `kpi.md` / `kpi.html` / `kpi.json` | after `python -m utils.kpi`: the QA metrics review, as the CI summary, a dashboard, and data (see below) |
 
 **Allure report.** Every merge to main publishes it to GitHub Pages, so anyone can open it without downloading
-anything: **https://ai-musician.github.io/qa-automation-framework/**. It shows each test's API calls (request and
+anything: **https://ai-musician.github.io/qa-automation-framework/report/**. It shows each test's API calls (request and
 response), groups tests by layer (API / UI / Performance) and module, sorts failures into product defects and test
 defects, links back to the CI run, and keeps history, so the trend charts and each test's past results build up
 run after run. Locally: `brew install allure`, then `allure serve reports/allure-results`.
@@ -352,7 +362,7 @@ shows a different number of tests than JUnit says ran.
 ## QA KPIs
 
 Every CI run ends with a **QA metrics review** on its summary page (`utils/kpi.py`, standard library only), and
-every merge to main publishes it as a dashboard: **https://ai-musician.github.io/qa-automation-framework/kpi/**
+every merge to main publishes it as the site's landing page: **https://ai-musician.github.io/qa-automation-framework/**
 (the run's status and suites, tests per merge to main from the report's history, the key signals, login TP99
 against its recent median, coverage, a searchable table of every metric that opens to show where each number comes
 from, TP99 against each API's SLO, the environment, and bugs by severity; light and dark mode with a switch, works on

@@ -191,11 +191,15 @@ def suites(junit_files: list[Path]) -> list[dict]:
 
 def run_trend(current_run, passed: int, total: int) -> list[dict]:
     """Tests per merge to main: the published Allure report's history (real counts, one per run) plus this run."""
-    try:
-        with urllib.request.urlopen(links()["allure"] + "history/history-trend.json", timeout=10) as res:
-            history = json.loads(res.read())
-    except (OSError, ValueError):
-        history = []                                    # offline, or no report published yet
+    history = []                                        # stays empty when offline, or no report is published yet
+    # the report lives at /report/; before its first publish there it was at the site root
+    for base in (links()["allure"], links()["dashboard"]):
+        try:
+            with urllib.request.urlopen(base + "history/history-trend.json", timeout=10) as res:
+                history = json.loads(res.read())
+            break
+        except (OSError, ValueError):
+            continue
     points = sorted(({"run": p["buildOrder"], "passed": p["data"].get("passed", 0), "total": p["data"].get("total", 0)}
                      for p in history if p.get("buildOrder") and str(p["buildOrder"]) != str(current_run)),
                     key=lambda p: p["run"])
@@ -345,7 +349,7 @@ def links() -> dict:
     server = os.getenv("GITHUB_SERVER_URL", "https://github.com")
     run = os.getenv("GITHUB_RUN_ID")
     return {"repo": f"{server}/{repo}", "run": f"{server}/{repo}/actions/runs/{run}" if run else None,
-            "dashboard": f"https://{owner}.github.io/{name}/kpi/", "allure": f"https://{owner}.github.io/{name}/",
+            "dashboard": f"https://{owner}.github.io/{name}/", "allure": f"https://{owner}.github.io/{name}/report/",
             "definitions": f"{server}/{repo}/blob/main/docs/KPIs.md"}
 
 

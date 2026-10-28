@@ -14,7 +14,7 @@
 #   aws-qa       merges to main (and manual runs): creates a QA environment on AWS from infra/qa-env.yml, runs the
 #                API + UI tests against it, deletes it, and checks nothing was left (see README: AWS QA environment)
 #   allure       merges to main (and manual runs): builds the Allure report from both test jobs, with history,
-#                and publishes it with the KPI dashboard (/kpi/) to GitHub Pages; refuses to publish if a
+#                and publishes it to GitHub Pages: the KPI dashboard at / and the report at /report/; refuses to publish if a
 #                credential made it into either
 #
 # Reports are attached to each run under "Artifacts"; performance results and KPIs also show on the run's summary page.
@@ -215,14 +215,16 @@ jobs:
           cp reports/performance/allure-results/* results/ 2>/dev/null || true
 
           # history from the report that's live now: this is what fills the trend charts run after run
+          # (the report lives at /report/; until the first publish there, it was at the site root)
           for f in history.json history-trend.json duration-trend.json categories-trend.json retry-trend.json; do
-            curl -sfL "$SITE/history/$f" -o "results/history/$f" || echo "no $f yet (first report)"
+            curl -sfL "$SITE/report/history/$f" -o "results/history/$f" \
+              || curl -sfL "$SITE/history/$f" -o "results/history/$f" || echo "no $f yet (first report)"
           done
 
           # "Executors" widget: links the report back to this CI run
           cat > results/executor.json <<EOF
           {"name": "GitHub Actions", "type": "github", "buildOrder": ${{ github.run_number }},
-           "buildName": "run #${{ github.run_number }}", "buildUrl": "$RUN_URL", "reportUrl": "$SITE"}
+           "buildName": "run #${{ github.run_number }}", "buildUrl": "$RUN_URL", "reportUrl": "$SITE/report/"}
           EOF
 
           cat > results/environment.properties <<EOF
@@ -260,12 +262,18 @@ jobs:
           test -d "$plugin/static" || { echo "::error::custom-logo-plugin not found in Allure $ALLURE_VERSION"; exit 1; }
           cp allure/custom-logo.css "$plugin/static/styles.css"
           echo "  - custom-logo-plugin" >> "allure-$ALLURE_VERSION/config/allure.yml"
-          "allure-$ALLURE_VERSION/bin/allure" generate results -o site --clean
-          # the KPI dashboard (utils/kpi.py) goes next to the report, at /kpi/
-          # (kpi.json beside it is what the dashboard's "Export data" button downloads)
+          # the site: the KPI dashboard (utils/kpi.py) is the landing page, the Allure report is at /report/
+          "allure-$ALLURE_VERSION/bin/allure" generate results -o site/report --clean
           if [ -f reports/kpi/kpi.html ]; then
-            mkdir -p site/kpi && cp reports/kpi/kpi.html site/kpi/index.html && cp reports/kpi/kpi.json site/kpi/
+            cp reports/kpi/kpi.html site/index.html
+            cp reports/kpi/kpi.json site/       # what the dashboard's "Export data" button downloads
+          else
+            echo '<!doctype html><meta http-equiv="refresh" content="0; url=report/"><a href="report/">Test report</a>' > site/index.html
           fi
+          # the dashboard used to be at /kpi/: links already shared keep working
+          mkdir -p site/kpi
+          echo '<!doctype html><meta charset="utf-8"><title>Moved</title><meta http-equiv="refresh" content="0; url=../">
+          <link rel="canonical" href="../"><a href="../">The QA dashboard has moved here</a>' > site/kpi/index.html
 
       - name: Check the report shows every test that ran
         run: |
@@ -274,7 +282,7 @@ jobs:
           import glob, json, sys, xml.etree.ElementTree as ET
           ran = sum(int(s.get("tests", 0)) for f in glob.glob("reports/*/junit.xml")
                     for s in ET.parse(f).getroot().iter("testsuite"))
-          shown = json.load(open("site/widgets/summary.json"))["statistic"]["total"]
+          shown = json.load(open("site/report/widgets/summary.json"))["statistic"]["total"]
           print(f"JUnit: {ran} tests ran; Allure report: {shown}")
           if ran != shown:
               print(f"::error::The Allure report shows {shown} tests but {ran} ran; not publishing.")
@@ -299,7 +307,7 @@ jobs:
 
       - name: Link the report on the run page
         run: |
-          echo "### [Allure report](${{ steps.deploy.outputs.page_url }}) · [KPI dashboard](${{ steps.deploy.outputs.page_url }}kpi/)" >> "$GITHUB_STEP_SUMMARY"
+          echo "### [KPI dashboard](${{ steps.deploy.outputs.page_url }}) · [Allure report](${{ steps.deploy.outputs.page_url }}report/)" >> "$GITHUB_STEP_SUMMARY"
 
   aws-qa:
     name: Tests on AWS QA environment
