@@ -5,7 +5,7 @@ Performance and concurrency tests. Not part of the normal run; start them with:
 
 Each scenario sends many requests from parallel threads and checks:
   - no request failed (error rate 0%)
-  - p95 latency is within its target (95% of requests were at least this fast)
+  - TP99 latency is within its SLO (99% of requests were at least this fast)
 and, for money and accounts, that nothing was lost or duplicated under load.
 
 Targets are for the local Flask mock server on a laptop; against a real environment they'd come from the
@@ -44,13 +44,13 @@ def perf_results():
         write_reports(summaries, REPORTS)
 
 
-def check(summary, target_p95_ms, perf_results):
-    """Records the scenario for the report, then fails the test if it missed its target."""
-    summary.target_p95_ms = target_p95_ms
-    summary.passed = summary.error_rate == 0 and summary.p95_ms <= target_p95_ms
+def check(summary, target_p99_ms, perf_results):
+    """Records the scenario for the report, then fails the test if it missed its SLO."""
+    summary.target_p99_ms = target_p99_ms
+    summary.passed = summary.error_rate == 0 and summary.p99_ms <= target_p99_ms
     perf_results.append(summary)
     assert summary.error_rate == 0, f"{summary.errors} of {summary.requests} requests failed, e.g. {summary.sample_errors}"
-    assert summary.p95_ms <= target_p95_ms, f"p95 {summary.p95_ms:.1f} ms is over the {target_p95_ms} ms target"
+    assert summary.p99_ms <= target_p99_ms, f"TP99 {summary.p99_ms:.1f} ms is over the {target_p99_ms} ms SLO"
 
 
 @pytest.fixture
@@ -144,7 +144,7 @@ def test_same_email_registered_in_parallel_creates_one_user(auth, admin_api, per
 
     summary = run_load("same email x20 in parallel", send, requests_total=20, concurrency=20,
                        warmup=0, ok_statuses=(201, 409))
-    summary.target_p95_ms = None
+    summary.target_p99_ms = None
     summary.passed = summary.statuses.get("201", 0) == 1
     perf_results.append(summary)
 

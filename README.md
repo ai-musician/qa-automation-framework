@@ -65,7 +65,7 @@ utils/
   test_data.py        Loads negative test cases from data/negative/*.json
   load.py             Load generator: parallel requests, latency percentiles, HTML/JSON report
   assertions.py       Custom assertions with readable failure messages
-  kpi.py              QA KPIs from the run's reports (quality, coverage, tests, pipeline, performance)
+  kpi.py              QA metrics review: output / input / operational metrics with goals and trends
 tests/
   api/                API tests: auth, users, transactions
     test_negative_data.py   Data-driven negative tests, one run per case in data/negative/
@@ -73,13 +73,15 @@ tests/
     pages.py          Page Object for the frontend (FinPayPage)
     test_ui_*.py      UI tests: registration, transactions, error messages
   perf/
-    test_performance.py   Load scenarios with p95 targets + concurrency correctness checks
+    test_performance.py   Load scenarios with TP99 SLOs + concurrency correctness checks
 data/
   negative/           Negative test data: 76 invalid requests across 5 files (users, user updates,
                       transactions, API keys, auth headers), each with the expected error
   bugs.json           Bugs found before release, with severity (feeds the KPI report)
   *.json              Seed data for the scripts
 scripts/              Load seed data into a running server by hand
+docs/
+  KPIs.md             QA KPI framework: every metric's definition, source, goal, and what happens when it's red
 reports/              Generated: HTML report, JUnit XML, API log, failure screenshots (git-ignored)
 ```
 
@@ -239,31 +241,34 @@ Every run writes to `reports/`:
 | `junit.xml` | CI tools (Jenkins, GitHub Actions, GitLab) |
 | `api.log` | every API request and response (method, URL, status, bodies) |
 | `artifacts/<test>/test-failed-1.png` | screenshot of the browser at the moment a UI test failed |
-| `performance.html` / `performance.json` | after `pytest -m perf`: req/s, p50/p95/p99, errors and pass/fail per scenario |
-| `kpi.md` / `kpi.json` | after `python -m utils.kpi`: the QA KPIs (see below) |
+| `performance.html` / `performance.json` | after `pytest -m perf`: req/s, TP50/TP90/TP99/TP99.9, errors and pass/fail per scenario |
+| `kpi.md` / `kpi.json` | after `python -m utils.kpi`: the QA metrics review (see below) |
 
 ---
 
 ## QA KPIs
 
-Every CI run ends with a **QA KPIs** table on its summary page (`utils/kpi.py`, standard library only). Each KPI
-is tied to a goal and shown next to its target, and every number is measured from what the run produces:
+Every CI run ends with a **QA metrics review** on its summary page (`utils/kpi.py`, standard library only). The
+full definitions, goals and reasoning are in **[docs/KPIs.md](docs/KPIs.md)**; in short:
 
-| Area | KPI | Target | Measured from |
-|---|---|---|---|
-| Quality | Bugs caught before release, by severity; open critical bugs | 0 open critical | `data/bugs.json` |
-| Coverage | Documented endpoints tested; documented status codes tested | 100% | the API table above vs `api.log` (every request the tests sent) |
-| Tests | Functional tests passing; run time | 100% | `junit.xml` |
-| Pipeline | CI pass rate of the last 20 runs on `main`; median time from push to result | ≥ 95%; ≤ 5 min | GitHub CLI |
-| Performance | Scenarios within target; error rate under load; slowest p95 as % of its target; data integrity checks | all; 0%; ≤ 100%; all | `performance.json` |
+| Section | Metrics | Goals |
+|---|---|---|
+| **Output**: what customers feel | availability under load (+ error budget used); APIs within their TP99 SLO; login TP99 with its trend; lost or duplicated records under load | ≥ 99.9%; all; ≤ 250 ms; 0 |
+| **Input**: what the team controls | documented status codes tested; functional tests passing; bugs caught before release by severity; open critical bugs | 100%; 100%; tracked; 0 |
+| **Operational excellence**: health of main | change failure rate; time to restore main; time from push to result; merge frequency | ≤ 15%; ≤ 1 h; ≤ 10 min; tracked |
+| **API latency** | TP50 / TP90 / TP99 / TP99.9 per scenario, with a TP99 sparkline over the last 8 merges to main | TP99 ≤ each API's SLO |
 
-Status-code coverage earned its place on the first run: it listed 7 documented responses no test checked (401 on
+How it works:
+- **Measured, not typed in.** Coverage compares the README's API table with `api.log` (every request the tests sent);
+  latency comes from `performance.json`; the operational metrics and trends come from this workflow's history on
+  main through the GitHub CLI. The one hand-kept input is bug severity in `data/bugs.json`.
+- **Callouts first.** Every red metric, and every TP99 more than 25% (and 2 ms) worse than its median over the last
+  8 merges, is listed at the top, so a review starts with what needs attention.
+- **It reports; it never fails the build.** The tests do that: a missed TP99 SLO, a single error under load or a lost
+  record fails the performance job.
+
+Status-code coverage earned its place on its first run: it listed 7 documented responses no test checked (401 on
 five routes, two 404s). Tests for them were added, and it now reports 35 / 35.
-
-What I left out on purpose: the number of tests (100 weak tests can still miss the bug) and line coverage of the
-mock server. With a real system and history I'd add **defect leakage** (bugs found in production ÷ all bugs),
-**flaky test rate** (tests that pass on a rerun of the same commit), **mean time to detect** from monitoring, and
-**change failure rate** (releases that caused an incident), and track all of them as trends per release.
 
 Run it locally after the tests: `pytest`, then `python -m utils.kpi --perf <folder with performance.json>`
 (`pytest -m perf` writes its own `junit.xml` and `api.log` to `reports/`, so keep its `performance.json` elsewhere or run it first).
@@ -277,12 +282,12 @@ dependency-free load generator (`utils/load.py`: threads + `requests`) and seven
 
 | Scenario | Load | Checks |
 |---|---|---|
-| login | 200 requests, 10 parallel, one user | p95 ≤ 250 ms, 0 errors |
-| login, different users | 200 users, each with their own API key, 10 parallel | p95 ≤ 250 ms, 0 errors, and **each token belongs to its user**: it reads its own user's transactions (200) and is refused the next user's (403) |
-| get user | 500 requests, 20 parallel | p95 ≤ 150 ms, 0 errors |
-| create user | 300 requests, 20 parallel | p95 ≤ 250 ms, 0 errors |
-| create transaction | 300 requests, 20 parallel | p95 ≤ 250 ms, 0 errors, **no lost writes**: the account history grows by exactly the number of 201s |
-| history read + write mix | 400 requests, 20 parallel, half reads, half writes | p95 ≤ 300 ms, 0 errors (reading a list while it's being written to is a classic crash) |
+| login | 200 requests, 10 parallel, one user | TP99 ≤ 250 ms, 0 errors |
+| login, different users | 200 users, each with their own API key, 10 parallel | TP99 ≤ 250 ms, 0 errors, and **each token belongs to its user**: it reads its own user's transactions (200) and is refused the next user's (403) |
+| get user | 500 requests, 20 parallel | TP99 ≤ 150 ms, 0 errors |
+| create user | 300 requests, 20 parallel | TP99 ≤ 250 ms, 0 errors |
+| create transaction | 300 requests, 20 parallel | TP99 ≤ 250 ms, 0 errors, **no lost writes**: the account history grows by exactly the number of 201s |
+| history read + write mix | 400 requests, 20 parallel, half reads, half writes | TP99 ≤ 300 ms, 0 errors (reading a list while it's being written to is a classic crash) |
 | same email ×20 in parallel | 20 sign-ups at once with one email | **exactly one** 201, nineteen 409s, and the email stored once |
 
 Why different users: 200 logins by one user mostly measure a cache, and in a real system would run into per-user
@@ -291,9 +296,11 @@ rate limits or account lockout. The `login_users` fixture uses the admin key to 
 credential would be the only secret; the test users are created fresh on every run, so no keys are stored anywhere.
 
 How it measures: each run starts with 10 unmeasured warm-up requests, then reports requests per second and
-p50/p95/p99/max latency. A scenario passes when p95 is within target **and** no request failed.
+TP50/TP90/TP99/TP99.9/max latency. A scenario passes when **TP99** is within its SLO **and** no request failed. The
+SLO is on the tail, not the average or the median: at 1,000 requests a minute, a slow p99 is still 10 slow requests
+a minute for real customers. TP99.9 is reported but only means something with 1,000+ requests per scenario.
 
-Example run on a laptop against the mock server: p95 between 4 and 13 ms, 1,900–3,400 requests/second, no errors.
+Example run on a laptop against the mock server: TP99 between 5 and 30 ms, 1,900–3,400 requests/second, no errors.
 
 What the numbers mean and don't mean:
 - The targets are generous because the mock is a single Flask dev server on the same machine as the tests.
@@ -321,10 +328,10 @@ by its service name (`http://api:5050`), as they would reach a deployed service.
 | **QA KPIs** | `python -m utils.kpi` on the two jobs' reports, always | ✅ | ✅ |
 
 - A third job, **QA KPIs**, always runs after the other two (also when they failed or performance was skipped)
-  and adds the [KPI table](#qa-kpis) to the summary page. It reports; it never fails the build.
+  and adds the [QA metrics review](#qa-kpis) to the summary page. It reports; it never fails the build.
 - Reports are attached to every run under **Artifacts** (HTML report, JUnit XML, API log, failure screenshots,
   performance HTML/JSON), even when tests fail.
-- Performance results appear as a table on the run's **summary page**, so a reviewer sees p95 and errors per scenario
+- Performance results appear as a table on the run's **summary page**, so a reviewer sees TP99 and errors per scenario
   without downloading anything.
 - A new push to a PR cancels the previous, now outdated run.
 - Performance tests are skipped when a change can't affect performance: they run only if the server code
@@ -363,8 +370,8 @@ by the data-driven negative tests on their first run (16 of 76 cases failed agai
 
 - **More negative data:** Unicode edge cases (emoji, right-to-left text, look-alike letters in emails),
   very large request bodies, and duplicate JSON keys.
-- **Performance trends in CI:** keep `performance.json` from each merge and fail a PR whose p95 is, say, 20% worse
-  than `main`'s, instead of only checking fixed targets.
+- **Fail on performance regressions:** the KPI review already calls out a TP99 that is 25% worse than its trend over
+  the last 8 merges; on a real service with stable test hardware I'd make that block the merge, not just warn.
 - **Parallel runs:** `pytest-xdist`. The tests already avoid shared data; the server fixture would need
   to start once for all workers instead of once per worker.
 - **Contract tests:** validate responses against an OpenAPI schema so services and the gateway can't drift apart.

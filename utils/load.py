@@ -2,7 +2,7 @@
 A small load-test helper: sends one kind of request many times from parallel threads and measures it.
 
     summary = run_load("get user", send, requests_total=500, concurrency=20)
-    summary.p95_ms      # 95% of requests were at least this fast
+    summary.p99_ms      # TP99: 99% of requests were at least this fast (the SLO the tests check)
 
 `send(session, i)` makes request number i and returns the requests.Response.
 Each thread gets its own requests.Session (sessions aren't thread-safe; one per thread also reuses connections).
@@ -27,11 +27,13 @@ class Summary:
     error_rate: float
     rps: float              # requests per second over the whole run
     p50_ms: float           # median
+    p90_ms: float
     p95_ms: float
-    p99_ms: float
+    p99_ms: float           # TP99: the SLO
+    p999_ms: float          # TP99.9: only meaningful with 1,000+ requests (below that it is close to the max)
     max_ms: float
     statuses: dict[str, int]
-    target_p95_ms: float | None = None
+    target_p99_ms: float | None = None
     passed: bool | None = None
     sample_errors: list[str] = field(default_factory=list)
 
@@ -77,8 +79,10 @@ def run_load(name, send, requests_total, concurrency, warmup=10, ok_statuses=(20
         error_rate=len(errors) / requests_total,
         rps=requests_total / wall_seconds,
         p50_ms=percentile(latencies, 50),
+        p90_ms=percentile(latencies, 90),
         p95_ms=percentile(latencies, 95),
         p99_ms=percentile(latencies, 99),
+        p999_ms=percentile(latencies, 99.9),
         max_ms=latencies[-1],
         statuses=statuses,
         sample_errors=errors[:5],
@@ -91,20 +95,20 @@ def write_reports(summaries: list[Summary], folder: Path):
     (folder / "performance.json").write_text(json.dumps([asdict(s) for s in summaries], indent=2))
 
     lines = ["## Performance results", "",
-             "| Scenario | Requests | Req/s | p50 ms | p95 ms | p95 target | p99 ms | Errors | Result |",
-             "|---|---:|---:|---:|---:|---:|---:|---:|:---:|"]
+             "| Scenario | Requests | Req/s | TP50 ms | TP90 ms | TP99 ms | TP99 SLO | TP99.9 ms | Errors | Result |",
+             "|---|---:|---:|---:|---:|---:|---:|---:|---:|:---:|"]
     for s in summaries:
-        target = s.target_p95_ms if s.target_p95_ms is not None else "-"
-        lines.append(f"| {s.name} | {s.requests} | {s.rps:,.0f} | {s.p50_ms:.1f} | {s.p95_ms:.1f} | {target} "
-                     f"| {s.p99_ms:.1f} | {s.errors} | {'✅' if s.passed else '❌'} |")
+        target = s.target_p99_ms if s.target_p99_ms is not None else "-"
+        lines.append(f"| {s.name} | {s.requests} | {s.rps:,.0f} | {s.p50_ms:.1f} | {s.p90_ms:.1f} | {s.p99_ms:.1f} "
+                     f"| {target} | {s.p999_ms:.1f} | {s.errors} | {'✅' if s.passed else '❌'} |")
     (folder / "performance.md").write_text("\n".join(lines) + "\n")
 
     rows = "".join(
         f"<tr class={'pass' if s.passed else 'fail'}>"
         f"<td>{s.name}</td><td>{s.requests}</td><td>{s.concurrency}</td>"
-        f"<td>{s.rps:,.0f}</td><td>{s.p50_ms:.1f}</td><td><b>{s.p95_ms:.1f}</b></td>"
-        f"<td>{s.target_p95_ms if s.target_p95_ms is not None else '-'}</td>"
-        f"<td>{s.p99_ms:.1f}</td><td>{s.max_ms:.1f}</td>"
+        f"<td>{s.rps:,.0f}</td><td>{s.p50_ms:.1f}</td><td>{s.p90_ms:.1f}</td><td><b>{s.p99_ms:.1f}</b></td>"
+        f"<td>{s.target_p99_ms if s.target_p99_ms is not None else '-'}</td>"
+        f"<td>{s.p999_ms:.1f}</td><td>{s.max_ms:.1f}</td>"
         f"<td>{s.errors} ({s.error_rate:.1%})</td><td>{'PASS' if s.passed else 'FAIL'}</td></tr>"
         for s in summaries
     )
@@ -120,11 +124,11 @@ def write_reports(summaries: list[Summary], folder: Path):
   p {{ max-width: 60rem; }}
 </style></head><body>
 <h1>Performance Report</h1>
-<p>Generated {time.strftime("%Y-%m-%d %H:%M:%S")}. Latencies in milliseconds. A scenario passes when p95 is within
-target and no request failed.</p>
+<p>Generated {time.strftime("%Y-%m-%d %H:%M:%S")}. Latencies in milliseconds. A scenario passes when TP99 is within
+its SLO and no request failed.</p>
 <table>
-<tr><th>Scenario</th><th>Requests</th><th>Concurrency</th><th>Req/s</th><th>p50</th><th>p95</th>
-<th>p95 target</th><th>p99</th><th>Max</th><th>Errors</th><th>Result</th></tr>
+<tr><th>Scenario</th><th>Requests</th><th>Concurrency</th><th>Req/s</th><th>TP50</th><th>TP90</th><th>TP99</th>
+<th>TP99 SLO</th><th>TP99.9</th><th>Max</th><th>Errors</th><th>Result</th></tr>
 {rows}
 </table></body></html>
 """)
