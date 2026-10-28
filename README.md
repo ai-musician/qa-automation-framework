@@ -38,20 +38,25 @@ After a run, open the report: `open reports/report.html`
 ### Or in Docker (nothing to install but Docker)
 
 ```bash
-docker compose run --rm tests                    # API + UI tests in parallel: the API and the tests in separate containers
-docker compose run --rm tests pytest -m perf     # performance tests (PERF_LOAD=3 docker compose run ... for 3x)
-docker compose run --rm tests pytest -m api      # any pytest command works the same way
-docker compose up api                            # just the API, at http://localhost:5050
-docker compose down                              # stop and remove the containers
+docker compose run --rm --build tests                  # API + UI tests in parallel: the API and the tests in separate containers
+docker compose run --rm --build tests pytest -m perf   # performance tests (PERF_LOAD=3 docker compose run ... for 3x)
+docker compose run --rm --build tests pytest -m api    # any pytest command works the same way
+docker compose up --build api                          # just the API, at http://localhost:5050
+docker compose down                                    # stop and remove the containers (the API keeps running until then)
 ```
 
 Reports are written to `reports/` on your machine, as in a local run. CI runs these same commands.
+
+Why `--build`: the code is copied into the images when they are built, and Compose reuses an existing image, so
+without it a run after a code change tests the **old** code. With it, Docker rebuilds only what changed (cached
+layers), so the browsers and `pip install` rerun only when `requirements.txt` changes. `--rm` removes the tests
+container when it finishes; the API container keeps running until `docker compose down`.
 
 ### Run against a QA server
 
 The tests image is built once and runs against any environment; only environment variables change.
 
-**The API in Docker as the QA server.** On the QA machine, `docker compose up -d api` keeps the API running at
+**The API in Docker as the QA server.** On the QA machine, `docker compose up -d --build api` keeps the API running at
 `http://<qa-machine>:5050`. Point tests at it from anywhere:
 
 ```bash
@@ -61,7 +66,7 @@ START_MOCK_SERVER=false API_BASE_URL=http://<qa-machine>:5050 BASE_URL=http://<q
 **The tests container against a deployed QA server:**
 
 ```bash
-docker compose run --rm --no-deps \
+docker compose run --rm --build --no-deps \
   -e API_BASE_URL=https://api.qa.finpay.example \
   -e BASE_URL=https://qa.finpay.example \
   -e API_KEY -e ADMIN_API_KEY \
