@@ -63,7 +63,15 @@ def test_user_cannot_create_transaction_for_other_user(user_api, fresh_user):
     assert_api_error(res, "FORBIDDEN", 403)
 
 def test_admin_can_read_any_users_transactions(admin_api, fresh_user):
-    assert_status(admin_api.get(f"/api/transactions/{fresh_user['id']}"), 200)
+    created = admin_api.post("/api/transactions", make_deposit(userId=fresh_user["id"]))
+    assert_status(created, 201)
+
+    res = admin_api.get(f"/api/transactions/{fresh_user['id']}")
+    assert_status(res, 200)
+    body = res.json()
+    assert body["count"] == len(body["transactions"]) == 1
+    assert created.json() in body["transactions"]
+    assert all(tx["userId"] == fresh_user["id"] for tx in body["transactions"])   # nobody else's
 
 @pytest.mark.negative
 def test_normal_user_cannot_list_users(user_api, admin_api):
@@ -80,17 +88,3 @@ def test_only_admin_can_delete_user(user_api, admin_api, fresh_user):
 def test_user_cannot_update_other_user(user_api, fresh_user):
     res = user_api.patch(f"/api/users/{fresh_user['id']}", {"accountType": "premium"})
     assert_api_error(res, "FORBIDDEN", 403)
-
-def test_admin_can_read_any_users_transaction(admin_api, fresh_user):
-    created=admin_api.post("/api/transactions", make_deposit(userId=fresh_user["id"]))
-    assert_status(created, 201)
-
-    res=admin_api.get(f"/api/transactions/{fresh_user['id']}")
-    assert_status(res, 200)
-    body = res.json()
-    assert body["count"] == 1
-    #assert body["count"] == len(body["transactions"])
-    assert created.json() in body["transactions"]
-    #assert all(tx["userId"]==fresh_user["id"] for tx in body["transactions"])
-
-
