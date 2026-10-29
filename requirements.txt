@@ -6,5 +6,7 @@ pytest-playwright==0.7.1
 playwright==1.56.0
 requests==2.32.3
 flask==3.0.3
+psycopg[binary]==3.3.5
+psycopg-pool==3.3.2
 faker==30.8.0
 python-dotenv==1.0.1

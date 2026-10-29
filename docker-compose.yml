@@ -1,19 +1,51 @@
-# The API and the tests in separate containers, like a service and its test runner in a real pipeline.
+# Three containers, like a service, its database and a test runner in a real pipeline:
 #
-#   docker compose run --rm --build tests                  # API + UI tests, in parallel (pytest -n auto)
+#   db     Postgres, from the official image (nothing to build)
+#   api    the mock API (Dockerfile, target api), which keeps its users and transactions in db
+#   tests  pytest + Playwright (Dockerfile, target tests), which call the api and check what it stored in db
+#
+# Compose starts them in that order, each one once the one before it is healthy, on a private network where each
+# container is reachable by its service name: http://api:5050, postgresql://...@db:5432.
+#
+#   docker compose run --rm --build tests                  # API + UI + DB tests, in parallel (pytest -n auto)
 #   docker compose run --rm --build tests pytest -m perf   # performance tests (PERF_LOAD=3 docker compose run ... for 3x)
-#   docker compose up --build api                          # just the API, at http://localhost:5050
-#   docker compose down                                    # stop and remove the containers
+#   docker compose up --build api                          # just the API (and its database), at http://localhost:5050
+#   docker compose exec db psql -U qa finpay               # look inside the database while it runs
+#   docker compose down                                    # stop and remove the containers, and the database's data
 #
 # --build: the code is copied into the images, so rebuild after a change (only changed layers are rebuilt).
 #
 # Reports are written to ./reports on this machine.
 
+x-database-url: &database-url postgresql://qa:qa-local-only@db:5432/finpay   # local throwaway database, not a secret
+
 services:
+  db:
+    image: postgres:17.6-alpine
+    environment:                       # the official image creates this user and database on first start
+      POSTGRES_USER: qa
+      POSTGRES_PASSWORD: qa-local-only
+      POSTGRES_DB: finpay
+    # The data lives in memory: every `docker compose down` gives the next run an empty database, and it's faster than
+    # disk. To keep the data instead, use a named volume: `volumes: [db-data:/var/lib/postgresql/data]`.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qa -d finpay"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    # no "ports": only the other containers can reach it (use `docker compose exec db psql` from your machine)
+
   api:
     build:
       context: .
       target: api
+    depends_on:
+      db:
+        condition: service_healthy     # wait until Postgres accepts connections
+    environment:
+      DATABASE_URL: *database-url      # "db" is the service name above: Docker's network resolves it
     ports:
       - "5050:5050"
 
@@ -28,6 +60,7 @@ services:
       BASE_URL: http://api:5050         # "api" is the service name above: Docker's network resolves it
       API_BASE_URL: http://api:5050
       START_MOCK_SERVER: "false"
+      DATABASE_URL: *database-url      # the same database the API writes to, for the checks in tests/db
       PERF_LOAD: ${PERF_LOAD:-1}
     volumes:
       - ./reports:/app/reports

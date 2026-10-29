@@ -1,12 +1,13 @@
 # Two images from one file:
-#   api    the mock fintech API (Flask only)
+#   api    the mock fintech API (Flask, and the Postgres driver)
 #   tests  pytest + Playwright with the browsers already installed
 # Built and run together by docker-compose.yml.
 
 FROM python:3.12-slim AS api
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir "$(grep -i '^flask==' requirements.txt)"     # same Flask version as the tests use
+# the same versions as the tests use, but only what the API needs
+RUN grep -iE '^(flask|psycopg|psycopg-pool)[=\[]' requirements.txt | xargs pip install --no-cache-dir
 COPY mock_server/ mock_server/
 ENV HOST=0.0.0.0 PORT=5050
 EXPOSE 5050

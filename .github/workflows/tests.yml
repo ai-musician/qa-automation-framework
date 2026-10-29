@@ -1,8 +1,8 @@
 # Runs on every pull request to main (each new push to the PR runs it again) and on every merge to main.
 #
-# The API and the tests run in Docker containers (docker-compose.yml): the same commands as on a laptop.
+# The API, its Postgres database and the tests run in Docker containers (docker-compose.yml): the same commands as on a laptop.
 #
-#   functional   API + UI tests (`pytest -n auto`: in parallel)        ~1-2 min
+#   functional   API + UI + database tests (`pytest -n auto`: in parallel)   ~1-2 min
 #   changes      decides whether the performance tests are needed (see PERF_PATHS below)
 #   performance  load + concurrency tests (`pytest -m perf`)           ~1 min
 #                only starts if functional passed: no point load-testing a broken build
@@ -81,7 +81,7 @@ jobs:
           # pull request: compare with the branch it merges into; push: compare with the previous commit on main
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
           # the API under test, the load tests and their helpers, test setup, dependencies, the containers, and this pipeline
-          PERF_PATHS: '^(mock_server/[^/]*\.py$|tests/perf/|utils/|conftest\.py$|config\.py$|pytest\.ini$|requirements\.txt$|Dockerfile$|docker-compose\.yml$|\.dockerignore$|\.github/workflows/)'
+          PERF_PATHS: '^(mock_server/[^/]*\.(py|sql)$|tests/perf/|utils/|conftest\.py$|config\.py$|pytest\.ini$|requirements\.txt$|Dockerfile$|docker-compose\.yml$|\.dockerignore$|\.github/workflows/)'
           # ... except the KPI dashboard: it reads the test results, it isn't tested by them
           NOT_PERF_PATHS: '^utils/kpi\.py$'
         run: |
@@ -265,7 +265,7 @@ jobs:
 
           cat > results/environment.properties <<EOF
           Commit=${GITHUB_SHA::7}
-          API=mock fintech API in Docker
+          API=mock fintech API + Postgres in Docker
           Functional.tests=pytest -n auto (parallel)
           Performance.load=PERF_LOAD=3, one process
           EOF
@@ -413,9 +413,10 @@ jobs:
 
       - name: Run API + UI tests against the QA environment
         run: |
-          # the same test image as every other job; only the address and the keys change (--no-deps: no local API)
+          # the same test image as every other job; only the address and the keys change (--no-deps: no local API).
+          # DATABASE_URL empty: that API keeps its data in memory, so the database tests skip themselves
           docker compose run --rm --no-deps \
-            -e BASE_URL="$API_URL" -e API_BASE_URL="$API_URL" -e API_KEY -e ADMIN_API_KEY \
+            -e BASE_URL="$API_URL" -e API_BASE_URL="$API_URL" -e API_KEY -e ADMIN_API_KEY -e DATABASE_URL= \
             tests
 
       - name: Upload reports
