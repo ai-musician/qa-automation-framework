@@ -14,7 +14,8 @@ The fake fintech API (plus a tiny web UI) that the tests run against.
     POST   /debug/crash                 end the process, as a crash would (admin; only with FAULT_INJECTION=on)
     GET    /ui                          mock frontend (registration + transactions)
 
-Data lives in Python dicts (stand-ins for MongoDB / Redis), so it disappears when the server stops.
+Users and transactions live in Postgres when DATABASE_URL is set (docker-compose.yml runs one), otherwise in Python
+dicts that disappear when the server stops (mock_server/store.py). Sessions are always in memory (Redis in the real system).
 
 Run it by hand:  python -m mock_server.app
 """
@@ -33,11 +34,11 @@ import uuid
 
 from flask import Flask, Response, g, jsonify, request, stream_with_context
 
+from mock_server import store
+from mock_server.store import EmailTaken
+
 app = Flask(__name__)
 
-# local "databases"
-users: dict[str, dict] = {}          # user id -> user
-transactions: dict[str, dict] = {}   # transaction id -> transaction
 sessions: dict[str, dict] = {}       # token -> {role, userId} (would be Redis in the real system)
 
 # Each API key identifies a caller: a role, and (for normal users) which user they are.
@@ -62,7 +63,7 @@ SEED_USERS = [
     {"id": "123", "name": "John Doe", "email": "john@example.com", "accountType": "premium", "createdAt": "2026-10-17T12:00:00.000Z"},
     {"id": "456", "name": "Swim Runner", "email": "runner@example.com", "accountType": "standard", "createdAt": "2026-10-16T12:00:00.000Z"},
 ]
-users.update({user["id"]: dict(user) for user in SEED_USERS})
+db = store.connect(os.getenv("DATABASE_URL"), SEED_USERS)
 
 
 def now() -> str:
@@ -134,10 +135,6 @@ def owns(user_id) -> bool:
     return g.role == "admin" or g.user_id == user_id
 
 
-def email_taken(email, except_id=None):
-    return any(u["email"].lower() == email.lower() and u["id"] != except_id for u in users.values())
-
-
 # ---------- auth ----------
 @app.post("/api/auth/token")
 def issue_token():
@@ -182,12 +179,12 @@ def create_user():
     details = validate_user(body)
     if details:
         return fail(400, "VALIDATION_ERROR", "Request validation failed", details)
-    if email_taken(body["email"]):                               # case-insensitive
-        return fail(409, "EMAIL_EXISTS", "A user with this email already exists")
-
     user = {"id": str(uuid.uuid4()), "name": body["name"].strip(), "email": body["email"],
             "accountType": body["accountType"], "createdAt": now()}
-    users[user["id"]] = user
+    try:
+        db.add_user(user)
+    except EmailTaken:                                           # case-insensitive
+        return fail(409, "EMAIL_EXISTS", "A user with this email already exists")
     return jsonify(user), 201
 
 
@@ -195,13 +192,13 @@ def create_user():
 @request_auth
 @admin_only
 def list_users():
-    return jsonify(list(users.values())), 200
+    return jsonify(db.list_users()), 200
 
 
 @app.get("/api/users/<user_id>")
 @request_auth
 def get_user(user_id):
-    user = users.get(user_id)
+    user = db.get_user(user_id)
     if not user:
         return fail(404, "USER_NOT_FOUND", f"User {user_id} not found")
     return jsonify(user)
@@ -212,8 +209,7 @@ def get_user(user_id):
 def update_user(user_id):
     if not owns(user_id):
         return fail(403, "FORBIDDEN", "You can only update your own account")
-    user = users.get(user_id)
-    if not user:
+    if not db.get_user(user_id):
         return fail(404, "USER_NOT_FOUND", f"User {user_id} not found")
     body = json_object()
     if body is None:
@@ -224,11 +220,14 @@ def update_user(user_id):
     details = validate_user(changes, partial=True)
     if details:
         return fail(400, "VALIDATION_ERROR", "Request validation failed", details)
-    if "email" in changes and email_taken(changes["email"], except_id=user_id):
-        return fail(409, "EMAIL_EXISTS", "A user with this email already exists")
     if "name" in changes:
         changes["name"] = changes["name"].strip()
-    user.update(changes)
+    try:
+        user = db.update_user(user_id, changes)
+    except EmailTaken:
+        return fail(409, "EMAIL_EXISTS", "A user with this email already exists")
+    if not user:                                                 # deleted since the check above
+        return fail(404, "USER_NOT_FOUND", f"User {user_id} not found")
     return jsonify(user), 200
 
 
@@ -236,7 +235,7 @@ def update_user(user_id):
 @request_auth
 @admin_only
 def delete_user(user_id):
-    if users.pop(user_id, None) is None:
+    if not db.delete_user(user_id):
         return fail(404, "USER_NOT_FOUND", f"User {user_id} not found")
     # a deleted user's keys stop working
     for key in [k for k, caller in API_KEYS.items() if caller["userId"] == user_id]:
@@ -248,7 +247,7 @@ def delete_user(user_id):
 @request_auth
 @admin_only
 def issue_api_key(user_id):
-    if user_id not in users:
+    if not db.get_user(user_id):
         return fail(404, "USER_NOT_FOUND", f"User {user_id} not found")
     api_key = f"key-{uuid.uuid4().hex}"
     API_KEYS[api_key] = {"role": "user", "userId": user_id}
@@ -292,9 +291,9 @@ def create_transaction():
     if not owns(user_id):
         return fail(403, "FORBIDDEN", "You can only create transactions for your own account")
 
-    if user_id not in users:
+    if not db.get_user(user_id):
         return fail(404, "USER_NOT_FOUND", f"User {user_id} not found")
-    if tx_type == "transfer" and recipient_id not in users:
+    if tx_type == "transfer" and not db.get_user(recipient_id):
         return fail(404, "RECIPIENT_NOT_FOUND", f"Recipient {recipient_id} not found")
 
     transaction = {
@@ -306,7 +305,7 @@ def create_transaction():
         "status": "completed",
         "createdAt": now(),
     }
-    transactions[transaction["id"]] = transaction
+    db.add_transaction(transaction)
     return jsonify(transaction), 201
 
 
@@ -315,10 +314,10 @@ def create_transaction():
 def get_user_transactions(user_id):
     if not owns(user_id):
         return fail(403, "FORBIDDEN", "You can only view your own transactions")
-    if user_id not in users:
+    if not db.get_user(user_id):
         return fail(404, "USER_NOT_FOUND", f"User {user_id} not found")
     # a user with no transactions yet gets an empty list, not an error
-    txs = [t for t in transactions.values() if t["userId"] == user_id]
+    txs = db.transactions_for(user_id)
     return jsonify({"count": len(txs), "transactions": txs}), 200
 
 

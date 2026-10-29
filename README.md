@@ -62,14 +62,16 @@ After a run, open the report: `open reports/report.html`
 ### Or in Docker (nothing to install but Docker)
 
 ```bash
-docker compose run --rm --build tests                  # API + UI tests in parallel: the API and the tests in separate containers
+docker compose run --rm --build tests                  # API + UI + database tests in parallel: Postgres, the API and the tests in 3 containers
 docker compose run --rm --build tests pytest -m perf   # performance tests (PERF_LOAD=3 docker compose run ... for 3x)
 docker compose run --rm --build tests pytest -m api    # any pytest command works the same way
-docker compose up --build api                          # just the API, at http://localhost:5050
-docker compose down                                    # stop and remove the containers (the API keeps running until then)
+docker compose up --build api                          # just the API (and its database), at http://localhost:5050
+docker compose exec db psql -U qa finpay               # look inside the database while it runs: \dt, SELECT * FROM users;
+docker compose down                                    # stop and remove the containers and the database's data (the API keeps running until then)
 ```
 
 Reports are written to `reports/` on your machine, as in a local run. CI runs these same commands.
+See [The database](#the-database-postgres-in-docker) for how the three containers fit together.
 
 Why `--build`: the code is copied into the images when they are built, and Compose reuses an existing image, so
 without it a run after a code change tests the **old** code. With it, Docker rebuilds only what changed (cached
@@ -184,9 +186,11 @@ needs no Kubernetes client.
 .github/workflows/
   tests.yml           CI: functional + performance tests (in Docker), then QA KPIs, on every pull request and merge to main
 Dockerfile            Two images: api (the mock API) and tests (pytest + Playwright with browsers)
-docker-compose.yml    Runs the API and the tests in separate containers
+docker-compose.yml    Runs Postgres, the API and the tests in separate containers
 mock_server/
   app.py              The system under test: a Flask stand-in for the API gateway + services
+  store.py            Where the API keeps users and transactions: Postgres (DATABASE_URL) or in memory
+  schema.sql          The Postgres tables, created by the API when it starts
   static/index.html   Mock frontend (sign in, register user, send transaction, history)
 config.py             Environment configuration (which URLs, which API keys)
 conftest.py           Starts the mock server once (also for parallel runs); fixtures: API clients, fresh_user
@@ -203,6 +207,8 @@ tests/
   ui/
     pages.py          Page Object for the frontend (FinPayPage)
     test_ui_*.py      UI tests: registration, transactions, error messages
+  db/
+    test_database.py  What the API actually stored: exact amounts, cascading deletes, the unique email under a race
   perf/
     test_performance.py   Load scenarios with TP99 SLOs + concurrency correctness checks
 data/
@@ -226,7 +232,8 @@ reports/              Generated: HTML report, JUnit XML, API log, failure screen
 ## The system under test
 
 The real system (Node/Express services behind an API gateway) isn't provided, so `mock_server/app.py`
-implements the same contract in Flask, with in-memory dicts standing in for MongoDB and Redis.
+implements the same contract in Flask. Users and transactions are stored in Postgres when it runs in Docker Compose,
+and in in-memory dicts everywhere else; sessions are always in memory (Redis in the real system).
 
 | Endpoint | Purpose | Responses |
 |---|---|---|
@@ -355,6 +362,60 @@ the same version as `requirements.txt`, so the browsers always match the library
 The API image holds only Flask and the mock server (about 50 MB). Keeping them apart mirrors production, where the
 service and its test runner are deployed separately; pointing the tests image at staging is just a change of
 `API_BASE_URL`. The API container has a health check, and the tests wait for it instead of sleeping.
+
+---
+
+## The database (Postgres in Docker)
+
+In Docker Compose the API stores its users and transactions in a real Postgres database, running in its own
+container. Three containers, each with one job:
+
+```
+  docker-compose.yml: one private network, each container reachable by its service name
+
+  ┌────────────┐   HTTP    ┌────────────┐    SQL    ┌────────────┐
+  │   tests    │ ────────► │    api     │ ────────► │     db     │
+  │  pytest +  │           │   Flask    │           │  Postgres  │
+  │ Playwright │ ───────────────────────────────────►            │
+  └────────────┘   SQL: tests/db reads the tables   └────────────┘
+
+  start order:  db (healthy: pg_isready)  →  api (healthy: answers on /)  →  tests
+```
+
+**Dockerfile vs. Compose.** A Dockerfile describes how to build *one* image. `db` needs no Dockerfile at all: it
+runs the official `postgres` image as it is, configured by environment variables (`POSTGRES_USER`, `POSTGRES_DB`).
+`api` and `tests` are built from this repo's Dockerfile. Compose then runs all three together: one network, the start
+order (`depends_on` with `condition: service_healthy`), and each container's settings.
+
+**How the containers find each other.** By service name: the API connects to `postgresql://...@db:5432/finpay`, the
+tests call `http://api:5050`. Docker's network resolves `db` and `api` to the right container. Only the API's port is
+published to your machine (`5050:5050`); the database is reachable from the other containers only, which is how a
+production database should be too. To look inside it, `docker compose exec db psql -U qa finpay`.
+
+**Where the data lives.** In memory (`tmpfs`), on purpose: each `docker compose down` throws the data away, so the
+next run starts from an empty database, and memory is faster than disk. A real service would keep it on a named
+volume (`volumes: [db-data:/var/lib/postgresql/data]`), which survives `down` and is deleted only by `down -v`.
+
+**The same image, with or without a database.** The API reads `DATABASE_URL`: set, it uses Postgres; not set, the
+in-memory store (`mock_server/store.py`, two classes with the same methods). So a plain `pytest`, the Kubernetes
+cluster and the AWS QA environment keep working unchanged, and the database tests skip themselves there. Which
+database the *tests* check is set like every other environment setting, in `config.py` (`DATABASE_URL`, or
+`.env.<ENV_NAME>`).
+
+**What the database tests check** (`tests/db`, marker `db`). An API test only sees the response, and a response
+can look right while the stored data is wrong. These tests call the API, then read the tables:
+
+| Test | The bug it would catch |
+|---|---|
+| a created user is in `users` with the same fields | a 201 that saved nothing, or saved something else |
+| amounts like `0.1` and `999999.99` are stored exactly | money in a float column (`0.1` is not exact as a float) |
+| deleting a user deletes their transactions | orphaned rows left behind |
+| a rejected request (400) stores nothing | validation that runs after the insert |
+| a user inserted straight into the table is served by the API | the API caching or reading from somewhere else; also shows test data set up in the database |
+| 10 sign-ups with the same email at the same moment: one 201, nine 409 | a check-then-insert race: only the database's unique index on `lower(email)` prevents it |
+
+The last test was checked by breaking it on purpose: without the unique index, all 10 sign-ups succeeded and the test
+failed. With it, exactly one does.
 
 ---
 

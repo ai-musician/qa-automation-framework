@@ -14,6 +14,7 @@ class Env:
     admin_api_key: str     # admin role
     start_mock_server: bool
     perf_load: float       # multiplies the request counts in tests/perf (CI: 1 on pull requests, 3 on main)
+    database_url: str      # the database behind the API, for tests/db; empty: those tests are skipped
 
 ENV_NAME = os.getenv("ENV_NAME", "local")
 load_dotenv(Path(__file__).parent / f".env.{ENV_NAME}")   # e.g. .env.staging; ignored if missing
@@ -27,4 +28,5 @@ env = Env(
     admin_api_key=os.getenv("ADMIN_API_KEY", "admin-api-key"),
     start_mock_server=os.getenv("START_MOCK_SERVER", "true").lower() == "true",
     perf_load=float(os.getenv("PERF_LOAD", "1")),
+    database_url=os.getenv("DATABASE_URL", ""),
 )

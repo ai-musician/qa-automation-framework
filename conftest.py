@@ -167,6 +167,18 @@ def admin_api() -> Client:
 
 
 @pytest.fixture
+def db():
+    """A connection to the API's database, for checking what the API stored (tests/db). Skips the test when there is
+    no database to check: DATABASE_URL is only set where the API runs on Postgres (docker-compose.yml)."""
+    if not settings.env.database_url:
+        pytest.skip("no database: DATABASE_URL is not set (the API keeps its data in memory)")
+    import psycopg
+    from psycopg.rows import dict_row
+    with psycopg.connect(settings.env.database_url, autocommit=True, row_factory=dict_row) as conn:
+        yield conn
+
+
+@pytest.fixture
 def fresh_user(user_api, admin_api):
     """The new user created through the API, so tests can use it without worrying about collisions."""
     res = user_api.post("/api/users", make_user())
