@@ -11,6 +11,8 @@ RUN grep -iE '^(flask|psycopg|psycopg-pool)[=\[]' requirements.txt | xargs pip i
 COPY mock_server/ mock_server/
 ENV HOST=0.0.0.0 PORT=5050
 EXPOSE 5050
+# not root: the same UID as k8s/api.yaml, and a number so that Kubernetes' runAsNonRoot can verify it
+USER 10001:10001
 HEALTHCHECK --interval=2s --timeout=2s --retries=15 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5050/')"
 CMD ["python", "-m", "mock_server.app"]
