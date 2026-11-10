@@ -8,13 +8,17 @@
 |---|---|
 | **[QA dashboard](https://ai-musician.github.io/qa-automation-framework/)** | the run's status, quality KPIs against their goals, trends, latency against SLOs |
 | **[Test report](https://ai-musician.github.io/qa-automation-framework/report/)** | every test with its steps and API calls (Allure) |
-| **[CI runs](https://github.com/ai-musician/qa-automation-framework/actions/workflows/tests.yml?query=branch%3Amain)** | API + UI, performance, AWS QA environment, KPIs, publishing |
+| **[CI runs](https://github.com/ai-musician/qa-automation-framework/actions/workflows/tests.yml?query=branch%3Amain)** | API + UI, performance, Kubernetes with chaos tests, AWS QA environment, KPIs, publishing |
 
-A test automation framework for a fintech system (users, transactions, auth, and an LLM chat endpoint). It tests the
-system through its **REST API**, its **web UI**, its **database**, and its behaviour **under load and failure** on
-Kubernetes. Every layer runs in CI on each pull request.
+A test automation framework for a fintech API and web UI (users, transactions, auth), with a mock LLM inference
+service for performance and reliability testing. It tests the system through its **REST API**, its **web UI**, its
+**database**, and its behaviour **under load and failure** on Kubernetes. Every change runs through CI on Docker,
+Kubernetes and AWS.
 
-**Stack:** Python 3.12 · pytest · Playwright · Docker Compose · Postgres · Kubernetes (kind) · GitHub Actions · AWS (CloudFormation) · Allure
+**Stack:** Python 3.12 · pytest (xdist, fixtures, markers, parametrize) · Playwright · requests · Flask (mock server)
+· Docker Compose · Postgres · Kubernetes (kind) · GitHub Actions · AWS CloudFormation · Allure
+
+It started as a Senior Quality Engineer take-home assessment, and has grown since.
 
 ## What this demonstrates
 
