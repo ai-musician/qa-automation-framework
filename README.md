@@ -10,14 +10,33 @@
 | **[Test report](https://ai-musician.github.io/qa-automation-framework/report/)** | every test with its steps and API calls (Allure) |
 | **[CI runs](https://github.com/ai-musician/qa-automation-framework/actions/workflows/tests.yml?query=branch%3Amain)** | API + UI, performance, AWS QA environment, KPIs, publishing |
 
-Test automation framework for the Senior Quality Engineer take-home assessment.
-It tests a fintech system (users, transactions, auth) through its **REST API** and its **web UI**.
+A test automation framework for a fintech system (users, transactions, auth, and an LLM chat endpoint). It tests the
+system through its **REST API**, its **web UI**, its **database**, and its behaviour **under load and failure** on
+Kubernetes. Every layer runs in CI on each pull request.
 
-**Stack:** Python 3.12 · pytest · Playwright · requests · Faker · Flask (mock server)
+**Stack:** Python 3.12 · pytest · Playwright · Docker Compose · Postgres · Kubernetes (kind) · GitHub Actions · AWS (CloudFormation) · Allure
 
-> The assessment allows "the language you are most comfortable with", so this uses **Python + pytest + Playwright**
-> instead of JavaScript. Playwright for Python is the same engine as Playwright for JS: same browsers,
-> same auto-waiting, same locator API.
+## What this demonstrates
+
+| Skill | Evidence |
+|---|---|
+| **Test design** | Data-driven negative tests (76 cases in JSON), factories, page objects, self-cleaning fixtures, [custom assertions](#design-decisions) |
+| **Finding real bugs** | [13 defects found in the API](#bugs-found-in-the-mock-api-and-fixed), each with a guarding test and a severity |
+| **Beyond the response** | [Database tests](#the-database-postgres-in-docker) that read the tables: money stored exactly, no orphans, a unique-email race |
+| **Performance engineering** | [Load tests with TP99 SLOs](#performance-testing), lost-write checks, and [LLM streaming metrics](#inference-performance) (TTFT, time between tokens) |
+| **Resilience** | [Chaos tests](#chaos-testing-losing-an-inference-pod-under-load) and [zero-downtime upgrade tests](#rolling-upgrades-releasing-under-load) on Kubernetes |
+| **CI/CD and infrastructure** | [GitHub Actions](#cicd-github-actions) with Docker, a throwaway [AWS environment](#aws-qa-environment) created and deleted per run, OIDC instead of stored keys |
+| **Quality metrics** | A [KPI dashboard](#qa-kpis) measured from the runs, not typed in |
+| **Security habits** | Credentials masked in every log and report, and CI refuses to publish a report that contains one |
+
+**Contents:** [Quick start](#quick-start) · [Docker](#or-in-docker-nothing-to-install-but-docker) ·
+[Kubernetes](#run-on-kubernetes) · [Project layout](#project-layout) · [System under test](#the-system-under-test) ·
+[Design decisions](#design-decisions) · [Database](#the-database-postgres-in-docker) · [AWS](#aws-qa-environment) ·
+[Reporting](#reporting) · [KPIs](#qa-kpis) · [Performance](#performance-testing) · [CI/CD](#cicd-github-actions) ·
+[Bugs found](#bugs-found-in-the-mock-api-and-fixed)
+
+> The language was open choice, so this uses **Python + pytest + Playwright** rather than JavaScript. Playwright for
+> Python is the same engine as Playwright for JS: same browsers, same auto-waiting, same locator API.
 
 ---
 
