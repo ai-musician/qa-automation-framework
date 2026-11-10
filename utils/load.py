@@ -175,6 +175,41 @@ def run_stream_load(name, send, requests_total, concurrency, warmup=4) -> tuple[
     return summary, streams
 
 
+@dataclass
+class Reply:
+    """One chat reply under steady load (stream_until), for the tests that change the service while it answers."""
+    start: float
+    end: float
+    ok: bool
+    error: str | None
+    version: str | None = None      # which version of the service answered (the X-App-Version header)
+
+
+def stream_until(stop: threading.Event, replies: list[Reply], url: str, api_key: str, tokens: int = 16):
+    """One user: chat requests back to back until stopped (16 tokens is about 0.2 s per reply). A reply counts as ok
+    only if it is this request's own, complete reply (it starts with the request's marker and has every token)."""
+    session, auth = Session(), {"Authorization": f"Bearer {api_key}"}   # the API key itself: any replica can answer
+    while not stop.is_set():
+        marker, start, version = f"req-{threading.get_ident()}-{len(replies)}", time.monotonic(), None
+        try:
+            with session.post(url, headers=auth, stream=True, json={
+                    "model": "mock-llm-small", "stream": True, "max_tokens": tokens,
+                    "messages": [{"role": "user", "content": f"{marker} hello"}]}) as res:
+                version = res.headers.get("X-App-Version")
+                stream = read_stream(res, time.perf_counter())
+            error = stream.error or (None if stream.content.startswith(marker + " ") and stream.tokens == tokens
+                                     else "someone else's or an incomplete reply")
+        except (requests.RequestException, ValueError, KeyError) as e:
+            error = str(e)
+        replies.append(Reply(start, time.monotonic(), error is None, error, version))
+
+
+def longest_gap(replies: list[Reply], start: float, end: float) -> float:
+    """The longest time in which no reply finished successfully: how long the service was fully down."""
+    times = [start] + sorted(r.end for r in replies if r.ok) + [end]
+    return max(b - a for a, b in zip(times, times[1:]))
+
+
 def write_reports(summaries: list[Summary], folder: Path):
     """performance.json for tools, performance.html for people, performance.md for the GitHub Actions run page."""
     folder.mkdir(parents=True, exist_ok=True)

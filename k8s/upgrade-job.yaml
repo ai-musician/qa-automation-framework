@@ -1,0 +1,69 @@
+# The rolling-upgrade tests (tests/upgrade) as a Job: they release new versions of the `inference` Deployment while
+# it serves chat requests. To do that, the Job's service account may read and change that one Deployment, list the
+# ReplicaSets it rolls back to and list its pods, and only in this namespace. It can't delete anything.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: upgrade
+  namespace: qa
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: upgrade
+  namespace: qa
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    resourceNames: [inference]
+    verbs: [get, patch]
+  - apiGroups: [apps]
+    resources: [replicasets]
+    verbs: [list]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: upgrade
+  namespace: qa
+subjects:
+  - kind: ServiceAccount
+    name: upgrade
+    namespace: qa
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: upgrade
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: upgrade
+  namespace: qa
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    spec:
+      serviceAccountName: upgrade
+      restartPolicy: Never
+      containers:
+        - name: upgrade
+          image: qa-tests:local
+          imagePullPolicy: Never
+          command: [pytest, -m, upgrade, tests/upgrade, -p, no:cacheprovider]
+          env:
+            - name: API_BASE_URL
+              value: http://inference:5050
+            - name: BASE_URL
+              value: http://inference:5050
+            - name: START_MOCK_SERVER
+              value: "false"
+          envFrom:
+            - secretRef: {name: api-keys}
+          resources:
+            requests: {cpu: 500m, memory: 512Mi}
+            limits: {memory: 1Gi}
