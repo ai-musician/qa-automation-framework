@@ -398,6 +398,17 @@ def chat_completions():
     return Response(stream_with_context(events()), mimetype="text/event-stream", headers={"Cache-Control": "no-cache"})
 
 
+# ---------- which version answered ----------
+# During a rolling update two versions serve at once; this header lets a client tell them apart (tests/upgrade).
+APP_VERSION = os.getenv("APP_VERSION", "dev")
+
+
+@app.after_request
+def add_version(response):
+    response.headers["X-App-Version"] = APP_VERSION
+    return response
+
+
 # ---------- fault injection, for the chaos tests ----------
 # Only exists when FAULT_INJECTION=on, which only the chaos tests' inference Deployment sets (k8s/inference.yaml).
 if os.getenv("FAULT_INJECTION") == "on":

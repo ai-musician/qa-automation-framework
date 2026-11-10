@@ -6,8 +6,9 @@
 #
 # Steps: create the cluster (if missing), build the two images from the Dockerfile and load them into it, store
 # new API keys in a Secret, deploy the API and run the API + UI tests as a Job; then deploy the inference service
-# (two replicas) and run the chaos tests as a Job, which stop one of its pods under load. Prints each Job's output
-# and exits non-zero if either fails.
+# (two replicas) and run the chaos tests as a Job, which stop one of its pods under load; then the rolling-upgrade
+# tests as a Job, which release a new version and a broken one under load. Prints each Job's output and exits
+# non-zero if any fails.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -66,10 +67,20 @@ k -n qa rollout restart deployment/inference
 k -n qa rollout status deployment/inference --timeout=180s
 
 echo "--- chaos: stopping an inference pod under load"
+summarize() {                                        # the measurements on the CI run's summary page
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    k -n qa logs "job/$1" | awk '/^## / {print ""; print; print ""; next} /^\|/' >> "$GITHUB_STEP_SUMMARY" || true
+  fi
+}
 status=0
 run_job chaos k8s/chaos-job.yaml || status=$?
-if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then          # the measurements on the CI run's summary page
-  k -n qa logs job/chaos | awk '/^## Pod failure/ {print ""; print; print ""; next} /^\|/' >> "$GITHUB_STEP_SUMMARY" || true
-fi
+summarize chaos
 if [ "$status" -ne 0 ]; then echo "--- chaos tests failed"; exit 1; fi
 echo "--- chaos tests passed: the inference service kept answering"
+
+echo "--- rolling upgrade: a new version under load, then a broken one"
+status=0
+run_job upgrade k8s/upgrade-job.yaml || status=$?
+summarize upgrade
+if [ "$status" -ne 0 ]; then echo "--- upgrade tests failed"; exit 1; fi
+echo "--- upgrade tests passed: new versions roll out, and broken ones never reach a user"

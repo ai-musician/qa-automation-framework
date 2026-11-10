@@ -15,57 +15,26 @@ pause, stops one of the two pods partway through, and measures what the users sa
 
 Both also check that two replicas are ready again within MAX_RECOVERY_S.
 """
-import os
 import threading
 import time
-from dataclasses import dataclass
-from pathlib import Path
 
 import pytest
 import requests
 
 import config
-from utils.http import Session
-from utils.load import read_stream
+from utils.kube import SERVICE_ACCOUNT, Kube, is_ready
+from utils.load import longest_gap, stream_until
 
-SERVICE_ACCOUNT = Path("/var/run/secrets/kubernetes.io/serviceaccount")
 pytestmark = [pytest.mark.chaos,
               pytest.mark.skipif(not SERVICE_ACCOUNT.exists(), reason="runs inside Kubernetes: scripts/k8s_test.sh")]
 
 CHAT = f"{config.env.api_base_url}/v1/chat/completions"
 USERS = 8
-TOKENS = 16                   # about 0.2 s per reply
 BEFORE_S, AFTER_S = 5, 5      # steady load before the pod is stopped, and after the replacement is ready
 REPLICAS = 2
 MIN_AVAILABILITY = 0.85       # crash: successful replies / all replies (about 93% on a laptop: the cut streams)
 MAX_GAP_S = 2.0               # crash: longest time with no successful reply at all
 MAX_RECOVERY_S = 60           # until two ready replicas again
-
-
-class Kube:
-    """The few Kubernetes API calls the tests need, with the pod's own service account (k8s/chaos-job.yaml)."""
-
-    def __init__(self):
-        self.http = requests.Session()
-        self.http.headers["Authorization"] = f"Bearer {(SERVICE_ACCOUNT / 'token').read_text()}"
-        self.http.verify = str(SERVICE_ACCOUNT / "ca.crt")
-        namespace = (SERVICE_ACCOUNT / "namespace").read_text()
-        host, port = os.environ["KUBERNETES_SERVICE_HOST"], os.environ["KUBERNETES_SERVICE_PORT"]
-        self.pods_url = f"https://{host}:{port}/api/v1/namespaces/{namespace}/pods"
-
-    def inference_pods(self) -> list[dict]:
-        res = self.http.get(self.pods_url, params={"labelSelector": "app=inference"}, timeout=10)
-        res.raise_for_status()
-        return res.json()["items"]
-
-    def delete(self, name: str):
-        self.http.delete(f"{self.pods_url}/{name}", timeout=10).raise_for_status()
-
-
-def is_ready(pod: dict) -> bool:
-    if pod["metadata"].get("deletionTimestamp"):        # being stopped: not counted, even while still answering
-        return False
-    return any(c["type"] == "Ready" and c["status"] == "True" for c in pod["status"].get("conditions", []))
 
 
 def restarts(pod: dict) -> int:
@@ -95,38 +64,6 @@ def crash(pod: dict):
     assert res.status_code == 202, f"POST /debug/crash: {res.status_code} {res.text[:200]}"
 
 
-@dataclass
-class Reply:
-    start: float
-    end: float
-    ok: bool
-    error: str | None
-
-
-def stream_until(stop: threading.Event, replies: list[Reply]):
-    """One user: chat requests back to back until stopped. A reply counts as ok only if it is this request's own,
-    complete reply (it starts with the request's marker and has every token)."""
-    session, auth = Session(), {"Authorization": f"Bearer {config.env.api_key}"}   # the API key itself: any replica
-    while not stop.is_set():
-        marker, start = f"req-{threading.get_ident()}-{len(replies)}", time.monotonic()
-        try:
-            with session.post(CHAT, headers=auth, stream=True, json={
-                    "model": "mock-llm-small", "stream": True, "max_tokens": TOKENS,
-                    "messages": [{"role": "user", "content": f"{marker} hello"}]}) as res:
-                stream = read_stream(res, time.perf_counter())
-            error = stream.error or (None if stream.content.startswith(marker + " ") and stream.tokens == TOKENS
-                                     else "someone else's or an incomplete reply")
-        except (requests.RequestException, ValueError, KeyError) as e:
-            error = str(e)
-        replies.append(Reply(start, time.monotonic(), error is None, error))
-
-
-def longest_gap(replies: list[Reply], start: float, end: float) -> float:
-    """The longest time in which no reply finished successfully: how long the service was fully down."""
-    times = [start] + sorted(r.end for r in replies if r.ok) + [end]
-    return max(b - a for a, b in zip(times, times[1:]))
-
-
 @pytest.fixture(scope="module")
 def kube():
     return Kube()
@@ -136,7 +73,8 @@ def kube():
 def test_inference_survives_losing_a_pod(kube, mode, capsys):
     wait_for_ready_replicas(kube, MAX_RECOVERY_S)
     stop, replies = threading.Event(), []
-    users = [threading.Thread(target=stream_until, args=(stop, replies)) for _ in range(USERS)]
+    users = [threading.Thread(target=stream_until, args=(stop, replies, CHAT, config.env.api_key))
+             for _ in range(USERS)]
     started = time.monotonic()
     for user in users:
         user.start()

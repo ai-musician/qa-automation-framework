@@ -11,27 +11,36 @@
 | **[CI runs](https://github.com/ai-musician/qa-automation-framework/actions/workflows/tests.yml?query=branch%3Amain)** | API + UI, performance, Kubernetes with chaos tests, AWS QA environment, KPIs, publishing |
 
 A test automation framework for a fintech API and web UI (users, transactions, auth), with a mock LLM inference
-service for performance and reliability testing. Every change runs through CI on Docker, Kubernetes and AWS.
-
-**Highlights**
-
-| | |
-|---|---|
-| **[Inference performance](#inference-performance)** | an OpenAI-compatible streaming endpoint; time to first token, time between tokens and tokens/s at 1–32 concurrent users, finding the capacity knee |
-| **[Chaos testing on Kubernetes](#chaos-testing-losing-an-inference-pod-under-load)** | one of two inference replicas stopped under load: 0 failed replies on a graceful stop, and the service keeps answering through a crash |
-| **[Run on Kubernetes](#run-on-kubernetes)** | the API as a Deployment with probes, limits and a hardened security context; the tests as a Job; a fresh kind cluster in CI on every change |
-| **[Performance testing](#performance-testing)** | load tests with TP99 SLOs, 200 users each with their own API key, no lost writes under concurrency |
-| **[AWS QA environment](#aws-qa-environment)** | created per run with CloudFormation, tested, then deleted; no stored AWS keys (OIDC) |
-| **[QA KPIs](#qa-kpis)** | the dashboard above: KPIs against goals, latency regressions that tell a slow CI machine from a slower service |
+service for performance and reliability testing. It tests the system through its **REST API**, its **web UI**, its
+**database**, and its behaviour **under load and failure** on Kubernetes. Every change runs through CI on Docker,
+Kubernetes and AWS.
 
 **Stack:** Python 3.12 · pytest (xdist, fixtures, markers, parametrize) · Playwright · requests · Flask (mock server)
-· Docker · Kubernetes (kind) · GitHub Actions · AWS CloudFormation · Allure
+· Docker Compose · Postgres · Kubernetes (kind) · GitHub Actions · AWS CloudFormation · Allure
 
 It started as a Senior Quality Engineer take-home assessment, and has grown since.
 
-> The assessment allows "the language you are most comfortable with", so this uses **Python + pytest + Playwright**
-> instead of JavaScript. Playwright for Python is the same engine as Playwright for JS: same browsers,
-> same auto-waiting, same locator API.
+## What this demonstrates
+
+| Skill | Evidence |
+|---|---|
+| **Test design** | Data-driven negative tests (76 cases in JSON), factories, page objects, self-cleaning fixtures, [custom assertions](#design-decisions) |
+| **Finding real bugs** | [13 defects found in the API](#bugs-found-in-the-mock-api-and-fixed), each with a guarding test and a severity |
+| **Beyond the response** | [Database tests](#the-database-postgres-in-docker) that read the tables: money stored exactly, no orphans, a unique-email race |
+| **Performance engineering** | [Load tests with TP99 SLOs](#performance-testing), lost-write checks, and [LLM streaming metrics](#inference-performance) (TTFT, time between tokens) |
+| **Resilience** | [Chaos tests](#chaos-testing-losing-an-inference-pod-under-load) and [zero-downtime upgrade tests](#rolling-upgrades-releasing-under-load) on Kubernetes |
+| **CI/CD and infrastructure** | [GitHub Actions](#cicd-github-actions) with Docker, a throwaway [AWS environment](#aws-qa-environment) created and deleted per run, OIDC instead of stored keys |
+| **Quality metrics** | A [KPI dashboard](#qa-kpis) measured from the runs, not typed in |
+| **Security habits** | Credentials masked in every log and report, and CI refuses to publish a report that contains one |
+
+**Contents:** [Quick start](#quick-start) · [Docker](#or-in-docker-nothing-to-install-but-docker) ·
+[Kubernetes](#run-on-kubernetes) · [Project layout](#project-layout) · [System under test](#the-system-under-test) ·
+[Design decisions](#design-decisions) · [Database](#the-database-postgres-in-docker) · [AWS](#aws-qa-environment) ·
+[Reporting](#reporting) · [KPIs](#qa-kpis) · [Performance](#performance-testing) · [CI/CD](#cicd-github-actions) ·
+[Bugs found](#bugs-found-in-the-mock-api-and-fixed)
+
+> The language was open choice, so this uses **Python + pytest + Playwright** rather than JavaScript. Playwright for
+> Python is the same engine as Playwright for JS: same browsers, same auto-waiting, same locator API.
 
 ---
 
@@ -117,11 +126,12 @@ docker compose run --rm --build --no-deps \
 
 The same two images, deployed to a local Kubernetes cluster ([kind](https://kind.sigs.k8s.io/): Kubernetes in
 Docker). CI runs this on every pull request and merge (job "Tests on Kubernetes"), including the
-[chaos tests](#chaos-testing-losing-an-inference-pod-under-load).
+[chaos tests](#chaos-testing-losing-an-inference-pod-under-load) and the
+[rolling-upgrade tests](#rolling-upgrades-releasing-under-load).
 
 ```bash
 brew install kind kubectl          # once; also needs Docker running
-scripts/k8s_test.sh                # cluster, images, Secret, API, tests, chaos: non-zero if any test fails
+scripts/k8s_test.sh                # cluster, images, Secret, API, tests, chaos, upgrades: non-zero if any test fails
 kind delete cluster --name qa      # remove the cluster
 ```
 
@@ -131,7 +141,8 @@ kind delete cluster --name qa      # remove the cluster
 | `k8s/tests-job.yaml` | **Job** `tests`: an init container waits until the API answers, then `pytest -n auto` runs once (`backoffLimit: 0`: a failed run is a result, not something to retry); `/dev/shm` enlarged for Chromium |
 | `k8s/inference.yaml` | **Deployment** `inference`: the same image as **two replicas**, with graceful shutdown (`preStop` pause, then `SIGTERM`) and `FAULT_INJECTION=on` for the chaos tests. **Service** `inference` |
 | `k8s/chaos-job.yaml` | **Job** `chaos`: runs `tests/chaos`, with a **ServiceAccount**, **Role** and **RoleBinding** that allow listing and deleting pods, and only in this namespace |
-| `scripts/k8s_test.sh` | creates the cluster, builds and loads the images, stores new API keys in the **Secret** `api-keys` (read by the API, the inference pods and the tests), deploys, runs both Jobs, prints their output |
+| `k8s/upgrade-job.yaml` | **Job** `upgrade`: runs `tests/upgrade`, with its own **ServiceAccount**, **Role** and **RoleBinding** that allow changing the `inference` Deployment, and no others |
+| `scripts/k8s_test.sh` | creates the cluster, builds and loads the images, stores new API keys in the **Secret** `api-keys` (read by the API, the inference pods and the tests), deploys, runs the Jobs, prints their output |
 
 One API replica: the mock keeps its data in memory, so a second pod would hold different users. A real service
 would scale out behind a shared database.
@@ -178,6 +189,48 @@ What it shows:
 The test talks to the Kubernetes API with plain HTTPS and the pod's service-account token, so the tests image
 needs no Kubernetes client.
 
+### Rolling upgrades: releasing under load
+
+`tests/upgrade` releases new versions of the `inference` service while eight users stream chat replies without a
+pause. Every reply carries the version that answered it (the `X-App-Version` header), so the test can see the traffic
+move. The Deployment starts one new pod at a time and stops an old one only when the new one is ready
+(`maxSurge: 1`, `maxUnavailable: 0`).
+
+| Release | What happens | Must hold |
+|---|---|---|
+| **A good version** | 1.0.0 to 2.0.0, one pod at a time | **not a single failed reply**, both versions answer during the overlap, only the new one afterwards |
+| **A broken version** | the new pods crash at start, so they never become ready; the Deployment reports `ProgressDeadlineExceeded` after 30 s and the test rolls back, as `kubectl rollout undo` does | **not a single failed reply**, none from the broken version, two replicas available throughout |
+
+Typical results (kind on a laptop, three runs):
+
+| Release | Replies | Failed | Longest gap with no successful reply | Took |
+|---|---:|---:|---:|---:|
+| Good version | 512–559 | **0** | 0.2 s | 2.0–2.9 s |
+| Broken version | 1,760–1,784 | **0** | 0.2 s | 30.6–31.3 s, detected at 30.3–31.1 s |
+
+The tests were also checked against settings that should fail them:
+
+| Change | Result |
+|---|---|
+| `preStop` removed | good version fails: 28 of 282 replies failed |
+| `maxSurge: 0`, `maxUnavailable: 1` | broken version fails: only 1 of 2 replicas available during the failed release |
+
+What it shows:
+- **A rollout being "done" doesn't mean the old pods have gone.** `kubectl rollout status` reports success while the
+  old pods are still in their 5 s `preStop` pause, and they can finish replies during it. The first version of these
+  tests caught this: a test that started right after the previous rollout received 3 of 1,737 replies from the
+  previous version. The tests now wait until those pods have exited.
+- **Readiness keeps a broken release away from users.** A new pod gets traffic only once it's ready, so a version that
+  can't start costs a stalled rollout, not an outage. The risk is a version that passes its probe and then fails on
+  real requests, which only a canary or an automated post-release check would catch.
+- **Nobody is told unless someone looks.** Kubernetes stalls a bad rollout but doesn't roll it back by itself. The
+  release pipeline has to watch for `ProgressDeadlineExceeded` and act on it.
+- **The overlap is the real compatibility test.** For a few seconds two versions answer at once. These replicas share
+  no state, so that's safe here. With a shared database, the new schema would have to work with the old code too.
+
+The rollout here changes an environment variable, because the local cluster has one image; on a real release it's the
+image tag. Kubernetes treats both the same way: a new pod template starts a rollout.
+
 ---
 
 ## Project layout
@@ -198,6 +251,7 @@ utils/
   factories.py        Test data factories (make_user, make_transaction) built on Faker
   test_data.py        Loads negative test cases from data/negative/*.json
   load.py             Load generator: parallel requests, latency percentiles, HTML/JSON report
+  kube.py             The few Kubernetes API calls the chaos and upgrade tests make, over plain HTTPS
   assertions.py       Custom assertions with readable failure messages
   kpi.py              QA metrics review: output / input / operational metrics with goals and trends
   redact.py           Masks API keys and tokens before anything is logged or attached to a report
@@ -211,6 +265,10 @@ tests/
     test_database.py  What the API actually stored: exact amounts, cascading deletes, the unique email under a race
   perf/
     test_performance.py   Load scenarios with TP99 SLOs + concurrency correctness checks
+  chaos/
+    test_pod_failure.py   Losing an inference pod under load, gracefully and by crash (inside Kubernetes)
+  upgrade/
+    test_rolling_upgrade.py   Releasing a good and a broken version under load (inside Kubernetes)
 data/
   negative/           Negative test data: 76 invalid requests across 5 files (users, user updates,
                       transactions, API keys, auth headers), each with the expected error

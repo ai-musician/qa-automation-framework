@@ -9,6 +9,12 @@ metadata:
   labels: {app: inference}
 spec:
   replicas: 2
+  # Rolling updates (tests/upgrade): start one new pod, and stop an old one only when the new one is ready, so two
+  # replicas always answer. A release that makes no progress for 30 s is reported as failed; the old pods stay.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxSurge: 1, maxUnavailable: 0}
+  progressDeadlineSeconds: 30
   selector:
     matchLabels: {app: inference}
   template:
@@ -33,6 +39,8 @@ spec:
               value: "0.0.0.0"
             - name: PORT
               value: "5050"
+            - name: APP_VERSION           # the version this Deployment runs: the X-App-Version header on each reply
+              value: "1.0.0"
             - name: FAULT_INJECTION       # adds POST /debug/crash (admin only), so the chaos tests can crash a pod
               value: "on"
           envFrom:
