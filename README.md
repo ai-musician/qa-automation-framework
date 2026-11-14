@@ -2,6 +2,16 @@
 
 [![tests](https://github.com/ai-musician/qa-automation-framework/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/ai-musician/qa-automation-framework/actions/workflows/tests.yml?query=branch%3Amain)
 
+A test automation framework for a fintech API and web UI, with a mock LLM inference service for performance and
+reliability testing. Tests go through the **REST API**, the **web UI**, the **database**, and the system **under load
+and failure** on Kubernetes.
+
+- **Stack:** Python 3.12 · pytest · Playwright · Docker · Postgres · Kubernetes (kind) · GitHub Actions · AWS CloudFormation · Allure
+- **Results:** 13 API defects found, each with a guarding test · chaos test: **0 failed replies** on graceful pod shutdown ·
+  rolling upgrades (good and broken version) under load: **0 failed replies** · load tests gated on TP99 SLOs
+- **Release gate:** CI is the pre-release regression gate. Every pull request and merge runs the full suite on Docker and
+  Kubernetes, and a failing test turns the run red (see [CI/CD](#cicd-github-actions))
+
 **Live results**, updated on every merge to main:
 
 | | |
@@ -10,15 +20,8 @@
 | **[Test report](https://ai-musician.github.io/qa-automation-framework/report/)** | every test with its steps and API calls (Allure) |
 | **[CI runs](https://github.com/ai-musician/qa-automation-framework/actions/workflows/tests.yml?query=branch%3Amain)** | API + UI, performance, Kubernetes with chaos tests, AWS QA environment, KPIs, publishing |
 
-A test automation framework for a fintech API and web UI (users, transactions, auth), with a mock LLM inference
-service for performance and reliability testing. It tests the system through its **REST API**, its **web UI**, its
-**database**, and its behaviour **under load and failure** on Kubernetes. Every change runs through CI on Docker,
-Kubernetes and AWS.
-
-**Stack:** Python 3.12 · pytest (xdist, fixtures, markers, parametrize) · Playwright · requests · Flask (mock server)
-· Docker Compose · Postgres · Kubernetes (kind) · GitHub Actions · AWS CloudFormation · Allure
-
-It started as a Senior Quality Engineer take-home assessment, and has grown since.
+Also in the stack: pytest-xdist, fixtures, markers and parametrize · requests · Flask (the mock server) · Docker
+Compose. The plan, scope and release sign-off checklist are in **[docs/TEST_PLAN.md](docs/TEST_PLAN.md)**.
 
 ## What this demonstrates
 
@@ -39,8 +42,8 @@ It started as a Senior Quality Engineer take-home assessment, and has grown sinc
 [Reporting](#reporting) · [KPIs](#qa-kpis) · [Performance](#performance-testing) · [CI/CD](#cicd-github-actions) ·
 [Bugs found](#bugs-found-in-the-mock-api-and-fixed)
 
-> The language was open choice, so this uses **Python + pytest + Playwright** rather than JavaScript. Playwright for
-> Python is the same engine as Playwright for JS: same browsers, same auto-waiting, same locator API.
+> Why **Python + pytest + Playwright**: Playwright for Python is the same engine as Playwright for JS (same browsers,
+> same auto-waiting, same locator API), and pytest fixtures keep test data and cleanup simple.
 
 ---
 
@@ -314,12 +317,12 @@ All errors use one shape, which the tests rely on:
            "details": {"email": "email must be a valid email address"}}}
 ```
 
-Users `123` and `456` (from the assessment's example payloads) are always seeded.
+Users `123` and `456` are always seeded.
 `GET /api/transactions/:userId` returns an envelope: `{"count": 2, "transactions": [...]}`.
 
 ### Assumptions
 
-The PDF requires authentication/authorization tests but doesn't define an auth scheme (no login endpoint,
+The requirements call for authentication and authorization tests but don't define an auth scheme (no login endpoint,
 keys or roles), so the mock API makes the smallest reasonable assumptions:
 
 - Callers exchange an API key for a bearer token at `POST /api/auth/token`. No token or a bad token → **401**.
@@ -330,7 +333,7 @@ keys or roles), so the mock API makes the smallest reasonable assumptions:
 - `accountType` (standard/premium) is the customer's product tier and **does not affect permissions**.
   John Doe is a premium customer with role `user`; permissions come only from the role on the API key.
 
-The PDF also gives no validation rules, so these were chosen as reasonable for a bank:
+The requirements also give no validation rules, so these were chosen as reasonable for a bank:
 
 - **name:** 2–100 characters after trimming; no line breaks or control characters.
 - **email:** one `@`, no spaces, a domain ending in a dot plus 2+ letters; local part ≤ 64 and total ≤ 254 characters (RFC 5321).
@@ -358,7 +361,7 @@ The PDF also gives no validation rules, so these were chosen as reasonable for a
 | **Reporting: results (multiple formats)** | `reports/report.html` (people) + `reports/junit.xml` (CI) |
 | **Reporting: screenshots on UI failure** | `reports/artifacts/<test>/test-failed-1.png` |
 | **Reporting: API response logging** | `reports/api.log` + shown in the HTML report under each failed test |
-| **Performance testing** (from the PDF overview) | `tests/perf/test_performance.py`, report in `reports/performance.html` |
+| **Performance testing** | `tests/perf/test_performance.py`, report in `reports/performance.html` |
 
 ---
 
@@ -602,8 +605,7 @@ Run it locally after the tests: `pytest`, then `python -m utils.kpi --perf <fold
 
 ## Performance testing
 
-The PDF's overview lists performance testing as part of the assessment, so the framework includes a small,
-dependency-free load generator (`utils/load.py`: threads + `requests`) and seven scenarios, plus the
+The framework includes a small, dependency-free load generator (`utils/load.py`: threads + `requests`) and seven scenarios, plus the
 [inference sweep](#inference-performance) below:
 
 | Scenario | Load | Checks |
@@ -701,8 +703,8 @@ by its service name (`http://api:5050`), as they would reach a deployed service.
 - Performance tests are skipped when a change can't affect performance: they run only if the server code
   (`mock_server/*.py`), `tests/perf/`, `utils/`, test setup (`conftest.py`, `config.py`, `pytest.ini`), `requirements.txt`
   or the workflow changed. A README or `.gitignore` edit runs the API + UI tests only. Manual runs always include them.
-- To block merging on failures, make both jobs **required status checks** in the repository's branch protection
-  settings for `main`.
+- **CI is the pre-release regression gate.** A failing test fails the run. To make that block merging, both test
+  jobs are set as **required status checks** in the branch protection settings for `main`.
 
 Run the same load locally: `PERF_LOAD=3 pytest -m perf`.
 
@@ -740,6 +742,8 @@ by the data-driven negative tests on their first run (16 of 76 cases failed agai
 - **Bigger load tests:** k6 or Locust for longer runs (soak tests over hours, ramping to find the breaking point),
   run from CI against staging rather than a laptop.
 - **Cross-browser UI runs:** chromium, firefox and webkit in CI.
+- **System-level testing on VM images (planned, not built):** run the suite against full VM images on KVM, to cover
+  the operating system, drivers and boot, not only the containers tested here.
 
 ---
 
