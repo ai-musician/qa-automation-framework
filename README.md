@@ -703,6 +703,8 @@ by its service name (`http://api:5050`), as they would reach a deployed service.
 - Performance tests are skipped when a change can't affect performance: they run only if the server code
   (`mock_server/*.py`), `tests/perf/`, `utils/`, test setup (`conftest.py`, `config.py`, `pytest.ini`), `requirements.txt`
   or the workflow changed. A README or `.gitignore` edit runs the API + UI tests only. Manual runs always include them.
+- The same Docker stages (tests, performance, KPI review) are also in a [`Jenkinsfile`](Jenkinsfile). It is a
+  sketch: it doesn't run the Kubernetes, Allure or AWS jobs, and GitHub Actions stays the main CI.
 - **CI is the pre-release regression gate.** A failing test fails the run. To make that block merging, both test
   jobs are set as **required status checks** in the branch protection settings for `main`.
 
