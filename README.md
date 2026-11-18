@@ -21,7 +21,11 @@ and failure** on Kubernetes.
 | **[CI runs](https://github.com/ai-musician/qa-automation-framework/actions/workflows/tests.yml?query=branch%3Amain)** | API + UI, performance, Kubernetes with chaos tests, AWS QA environment, KPIs, publishing |
 
 Also in the stack: pytest-xdist, fixtures, markers and parametrize · requests · Flask (the mock server) · Docker
-Compose. The plan, scope and release sign-off checklist are in **[docs/TEST_PLAN.md](docs/TEST_PLAN.md)**.
+Compose. The plan, scope and release sign-off checklist are in **[docs/TEST_PLAN.md](docs/TEST_PLAN.md)**. How to
+triage the two most common pod failures, CrashLoopBackOff and OOMKilled, is in **[docs/K8S_RUNBOOK.md](docs/K8S_RUNBOOK.md)**.
+
+**Related:** [rag-eval](https://github.com/ai-musician/rag-eval) is an LLM assistant that answers questions from this
+repo's docs and the runbook. It comes with an evaluation harness that grades its answers against a reviewed golden set.
 
 ## What this demonstrates
 
@@ -705,8 +709,9 @@ by its service name (`http://api:5050`), as they would reach a deployed service.
   or the workflow changed. A README or `.gitignore` edit runs the API + UI tests only. Manual runs always include them.
 - The same Docker stages (tests, performance, KPI review) are also in a [`Jenkinsfile`](Jenkinsfile). It is a
   sketch: it doesn't run the Kubernetes, Allure or AWS jobs, and GitHub Actions stays the main CI.
-- **CI is the pre-release regression gate.** A failing test fails the run. To make that block merging, both test
-  jobs are set as **required status checks** in the branch protection settings for `main`.
+- **CI is the pre-release regression gate.** A failing test fails the run. To make it block merging, set both test
+  jobs as **required status checks** in the branch protection settings for `main` (not enabled in this repository
+  yet).
 
 Run the same load locally: `PERF_LOAD=3 pytest -m perf`.
 
