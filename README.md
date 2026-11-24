@@ -238,6 +238,42 @@ What it shows:
 The rollout here changes an environment variable, because the local cluster has one image; on a real release it's the
 image tag. Kubernetes treats both the same way: a new pod template starts a rollout.
 
+### Test clusters on AWS, Google Cloud and Azure: create, test, destroy
+
+`scripts/cluster.sh` runs the same Kubernetes tests (API + UI, chaos, rolling upgrades) on a throwaway cluster on any
+of four platforms, and deletes it afterwards:
+
+```bash
+scripts/cluster.sh kind all      # local, free: create, test, destroy
+scripts/cluster.sh eks  all      # AWS EKS        ~$0.27/hour while it exists, ~15 min to create
+scripts/cluster.sh gke  all      # Google GKE     ~$0.14/hour,                  ~6 min
+scripts/cluster.sh aks  all      # Azure AKS      ~$0.20/hour,                  ~6 min
+
+scripts/cluster.sh eks plan      # or one step at a time: plan, create, test (as often as you like), destroy
+scripts/cluster.sh eks create
+scripts/cluster.sh eks test
+scripts/cluster.sh eks destroy
+```
+
+`all` destroys the cluster even when a test fails or you press Ctrl-C, and still exits non-zero if the tests failed,
+so it can run in CI as it is.
+
+| Platform | What `create` makes (`infra/clusters/<cloud>/main.tf`) | Logged in with |
+|---|---|---|
+| kind | a local cluster in Docker; the images are loaded into it, not pushed | - |
+| EKS | VPC with public subnets (no NAT gateway), EKS with 2 × t3.large, ECR repositories | `aws login` / `aws sso login` |
+| GKE | zonal cluster (free control plane), 2 × e2-standard-2 on their own service account, Artifact Registry repository | `gcloud auth login` + `gcloud auth application-default login` |
+| AKS | resource group with AKS (free tier) 2 × Standard_D2s_v5, a container registry only the nodes can pull from | `az login` |
+
+On a cloud, `test` builds the two images for `linux/amd64` (the nodes' CPU, even on an Apple-silicon laptop), pushes
+them with a new tag for each run, and runs `scripts/k8s_test.sh` with `KUBE_CONTEXT` and `IMAGE_REGISTRY` set, so the
+manifests pull those images instead of the local ones. The rest of the script is the same as on kind.
+
+**Safety.** Each cluster's Kubernetes API accepts only your current public IP (`TF_VAR_admin_cidrs` to change it). The
+kubeconfig goes to `.clusters/<cloud>.kubeconfig` and never into `~/.kube/config`, and every resource is tagged
+`purpose=test-cluster`. The Terraform state stays in `infra/clusters/<cloud>/` (git-ignored), so run `destroy` from
+the same checkout. A shared team setup would keep it in a remote backend (S3, GCS, Azure Storage) instead.
+
 ---
 
 ## Project layout
@@ -281,12 +317,14 @@ data/
                       transactions, API keys, auth headers), each with the expected error
   bugs.json           Bugs found before release, with severity (feeds the KPI report)
   *.json              Seed data for the scripts
-scripts/              Load seed data into a running server by hand
+scripts/              Load seed data into a running server by hand; k8s_test.sh (tests on a cluster);
+                      cluster.sh (create / test / destroy a cluster on kind, EKS, GKE or AKS)
 allure/
   plugin/             Allure plugin: this project's logo and styles, and a clear empty state for Categories
 infra/
   aws-setup.yml       One-time AWS setup: budget alert, GitHub OIDC login, least-privilege role for CI
   qa-env.yml          The per-run QA environment: one instance running the api image, open to the CI runner only
+  clusters/           Throwaway test clusters (Terraform) for scripts/cluster.sh: eks/, gke/, aks/
 docs/
   KPIs.md             QA KPI framework: every metric's definition, source, goal, and what happens when it's red
 reports/              Generated: HTML report, JUnit XML, API log, failure screenshots (git-ignored)
