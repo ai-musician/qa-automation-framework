@@ -4,6 +4,13 @@
 #   scripts/k8s_test.sh                        # needs Docker, kind and kubectl
 #   kind delete cluster --name qa              # remove the cluster afterwards
 #
+# On any other cluster (EKS, GKE, AKS: scripts/cluster.sh sets these up), point it at the cluster and a registry:
+#
+#   KUBE_CONTEXT=<context> IMAGE_REGISTRY=<registry/prefix> scripts/k8s_test.sh
+#
+# It then builds the images for IMAGE_PLATFORM (default linux/amd64, the nodes' CPU, not your laptop's), pushes
+# them to the registry with a new tag, and deploys the manifests with those images instead of the local ones.
+#
 # Steps: create the cluster (if missing), build the two images from the Dockerfile and load them into it, store
 # new API keys in a Secret, deploy the API and run the API + UI tests as a Job; then deploy the inference service
 # (two replicas) and run the chaos tests as a Job, which stop one of its pods under load; then the rolling-upgrade
@@ -13,16 +20,33 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CLUSTER="${CLUSTER:-qa}"
-k() { kubectl --context "kind-$CLUSTER" "$@"; }      # only ever this cluster, never your current kubectl context
+KUBE_CONTEXT="${KUBE_CONTEXT:-kind-$CLUSTER}"
+REGISTRY="${IMAGE_REGISTRY:-}"
+k() { kubectl --context "$KUBE_CONTEXT" "$@"; }      # only ever this cluster, never your current kubectl context
 
-if ! kind get clusters | grep -qx "$CLUSTER"; then
-  kind create cluster --name "$CLUSTER" --wait 120s
+# manifest FILE: the manifest to apply. On kind, as written; with a registry, the pushed images, pulled by the nodes.
+manifest() {
+  if [ -z "$REGISTRY" ]; then cat "$1"; return; fi
+  sed -e "s#image: qa-api:local#image: $API_IMAGE#" -e "s#image: qa-tests:local#image: $TESTS_IMAGE#" \
+      -e "s#imagePullPolicy: Never#imagePullPolicy: IfNotPresent#" "$1"
+}
+
+if [ -z "$REGISTRY" ]; then
+  if ! kind get clusters | grep -qx "$CLUSTER"; then
+    kind create cluster --name "$CLUSTER" --wait 120s
+  fi
+  echo "--- building and loading the images"
+  docker build --target api -t qa-api:local .
+  docker build --target tests -t qa-tests:local .
+  kind load docker-image qa-api:local qa-tests:local --name "$CLUSTER"
+else
+  tag="${IMAGE_TAG:-$(git rev-parse --short HEAD 2>/dev/null || echo dev)-$(date +%Y%m%d%H%M%S)}"   # new every run
+  API_IMAGE="$REGISTRY/qa-api:$tag"
+  TESTS_IMAGE="$REGISTRY/qa-tests:$tag"
+  echo "--- building and pushing the images to $REGISTRY ($tag, ${IMAGE_PLATFORM:-linux/amd64})"
+  docker buildx build --platform "${IMAGE_PLATFORM:-linux/amd64}" --target api -t "$API_IMAGE" --push .
+  docker buildx build --platform "${IMAGE_PLATFORM:-linux/amd64}" --target tests -t "$TESTS_IMAGE" --push .
 fi
-
-echo "--- building and loading the images"
-docker build --target api -t qa-api:local .
-docker build --target tests -t qa-tests:local .
-kind load docker-image qa-api:local qa-tests:local --name "$CLUSTER"
 
 echo "--- namespace and API keys"
 k create namespace qa --dry-run=client -o yaml | k apply -f -
@@ -34,7 +58,7 @@ k -n qa create secret generic api-keys --from-literal=API_KEY="$api_key" --from-
   --dry-run=client -o yaml | k apply -f -
 
 echo "--- deploying the API"
-k apply -f k8s/api.yaml
+manifest k8s/api.yaml | k apply -f -
 k -n qa rollout restart deployment/api               # pick up a rebuilt image and new keys on a second run
 k -n qa rollout status deployment/api --timeout=180s
 
@@ -42,7 +66,7 @@ k -n qa rollout status deployment/api --timeout=180s
 run_job() {
   local name=$1 file=$2
   k -n qa delete job "$name" --ignore-not-found --wait=true
-  k apply -f "$file"
+  manifest "$file" | k apply -f -
   k -n qa wait --for=condition=Ready pod -l job-name="$name" --timeout=300s >/dev/null 2>&1 || true
   k -n qa logs -f "job/$name" || true               # stream the output while it runs
   for _ in $(seq 1 120); do                          # the Job is done once it reports success or failure
@@ -62,7 +86,7 @@ fi
 echo "--- tests passed on Kubernetes"
 
 echo "--- deploying the inference service (two replicas)"
-k apply -f k8s/inference.yaml
+manifest k8s/inference.yaml | k apply -f -
 k -n qa rollout restart deployment/inference
 k -n qa rollout status deployment/inference --timeout=180s
 
